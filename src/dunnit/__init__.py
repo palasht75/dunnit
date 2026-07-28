@@ -10,5 +10,5 @@ from dunnit.contract import Contract, load_contract
 from dunnit.runner import verify
 from dunnit.verdict import Evidence, Status, Verdict
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["Contract", "Evidence", "Status", "Verdict", "__version__", "load_contract", "verify"]

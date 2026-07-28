@@ -5,5 +5,8 @@ checks:
     run: python3 -m pytest -q
   - name: lint
     run: python3 -m ruff check src tests
+protected:
+  - dod.yaml
+  - .github/**
 tamper: true
 stubs: true

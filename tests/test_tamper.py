@@ -51,3 +51,39 @@ def test_root_level_test_file_matched(repo):
     p.write_text("import pytest\n@pytest.mark.skip\ndef test_x():\n    pass\n")
     ev = check_tamper(collect_diff(repo, None), DEFAULT_TEST_GLOBS)
     assert any(e.check == "tamper:added-skips" for e in failing(ev))
+
+
+def test_protected_paths_default_blocks_dod_edit(repo):
+    import subprocess
+
+    from dunnit.checks.protected import check_protected
+    from dunnit.contract import DEFAULT_PROTECTED
+
+    (repo / "dod.yaml").write_text("version: 1\nchecks: []\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "add dod"], cwd=repo, check=True, capture_output=True)
+    (repo / "dod.yaml").write_text("version: 1\nchecks: []\ntamper: false\n")
+    ev = check_protected(collect_diff(repo, None), DEFAULT_PROTECTED)
+    assert any(e.check == "tamper:protected-path" for e in failing(ev))
+
+
+def test_protected_paths_custom_glob(repo):
+    from dunnit.checks.protected import check_protected
+
+    (repo / "ci.cfg").write_text("x=1\n")
+    import subprocess
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cfg"], cwd=repo, check=True, capture_output=True)
+    (repo / "ci.cfg").write_text("x=2\n")
+    ev = check_protected(collect_diff(repo, None), ["*.cfg"])
+    assert any(e.check == "tamper:protected-path" for e in failing(ev))
+
+
+def test_stub_detection_skips_docs(repo):
+    (repo / "README.md").write_text("example:\n\n    raise NotImplementedError\n")
+    import subprocess
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "docs"], cwd=repo, check=True, capture_output=True)
+    (repo / "README.md").write_text("example:\n\n    raise NotImplementedError\n    # TODO more docs\n")
+    ev = check_stubs(collect_diff(repo, None), DEFAULT_TEST_GLOBS)
+    assert all(e.status is not Status.WARN or "README" not in e.detail for e in ev)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dunnit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Did the agent actually do it? Tamper-evident verification of AI agent work: definition-of-done as code."
 readme = "README.md"
 license = "MIT"

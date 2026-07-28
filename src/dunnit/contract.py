@@ -7,7 +7,12 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_TEST_GLOBS = ["tests/**", "test/**", "**/test_*.py", "**/*_test.py", "**/*.test.*", "**/*.spec.*"]
+DEFAULT_TEST_GLOBS = [
+    "tests/**", "test/**", "**/test_*.py", "**/*_test.py", "**/*.test.*", "**/*.spec.*",
+]
+# The contract itself is protected by default: an agent editing dod.yaml to
+# weaken its own definition of done is the most obvious meta-hack.
+DEFAULT_PROTECTED = ["dod.yaml"]
 
 
 @dataclass
@@ -23,6 +28,7 @@ class Contract:
     base: str | None = None  # git ref to diff against, e.g. "origin/main"
     checks: list[CommandCheck] = field(default_factory=list)
     test_globs: list[str] = field(default_factory=lambda: list(DEFAULT_TEST_GLOBS))
+    protected: list[str] = field(default_factory=lambda: list(DEFAULT_PROTECTED))
     tamper: bool = True
     stubs: bool = True
 
@@ -51,11 +57,14 @@ def load_contract(path: Path | str) -> Contract:
             )
         )
 
+    protected = data.get("protected", DEFAULT_PROTECTED)
+
     return Contract(
         version=int(data.get("version", 1)),
         base=data.get("base"),
         checks=checks,
         test_globs=list(data.get("test_globs", DEFAULT_TEST_GLOBS)),
+        protected=list(protected) if protected else [],
         tamper=bool(data.get("tamper", True)),
         stubs=bool(data.get("stubs", True)),
     )
