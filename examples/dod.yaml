@@ -1,0 +1,9 @@
+version: 1
+base: origin/main
+checks:
+  - name: tests
+    run: pytest -q
+  - name: lint
+    run: ruff check .
+tamper: true
+stubs: true

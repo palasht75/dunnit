@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dunnit"
+version = "0.1.0"
+description = "Did the agent actually do it? Tamper-evident verification of AI agent work: definition-of-done as code."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "Palash", email = "palasht75@gmail.com" }]
+keywords = ["ai-agents", "verification", "reward-hacking", "testing", "definition-of-done", "cursor", "claude-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff"]
+
+[project.scripts]
+dunnit = "dunnit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/palasht75/dunnit"
+Issues = "https://github.com/palasht75/dunnit/issues"
+Changelog = "https://github.com/palasht75/dunnit/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dunnit"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+ignore = ["EXE002"]  # workspace mount forces the executable bit

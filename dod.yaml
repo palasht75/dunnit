@@ -1,0 +1,9 @@
+# dunnit verifies dunnit. Run `dunnit verify` before claiming done.
+version: 1
+checks:
+  - name: tests
+    run: python3 -m pytest -q
+  - name: lint
+    run: python3 -m ruff check src tests
+tamper: true
+stubs: true
