@@ -20,3 +20,14 @@ def repo(tmp_path: Path) -> Path:
     git("add", "-A")
     git("commit", "-qm", "base")
     return tmp_path
+
+
+@pytest.fixture
+def commit(repo: Path):
+    """Stage and commit everything in the repo fixture."""
+
+    def _commit(msg: str = "wip") -> None:
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", msg], cwd=repo, check=True, capture_output=True)
+
+    return _commit

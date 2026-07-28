@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.3.0 - 2026-07-28
+
+Detection depth and agent-feedback release.
+
+- **Untracked files are now inspected.** Brand-new files the agent never
+  staged were previously invisible to every diff check.
+- **Renamed-away tests are deleted tests**: `git mv tests/test_x.py x.bak`
+  now fails `tamper:deleted-tests`.
+- **New tamper checks**: `tamper:focused-tests` (`.only`, `fit`, `fdescribe`
+  silently deselect the rest of the suite), `tamper:trivial-assertions`
+  (`assert True`, `expect(true).toBe(true)`), and `tamper:test-config` /
+  `tamper:test-config-changed` (deselection patterns like `--ignore`,
+  `--deselect`, `collect_ignore`, `norecursedirs`, `testPathIgnorePatterns`
+  added to pytest/jest/vitest/mocha/playwright/cypress configs or conftest).
+- **Multi-language skip detection**, scoped by file extension: Python, JS/TS,
+  Go (`t.Skip`), Rust (`#[ignore]`), JVM (`@Disabled`/`@Ignore`), Ruby,
+  C#, PHP. Extension scoping also kills cross-language false positives.
+- **String-literal guard**: markers inside string literals no longer flag —
+  a test suite that tests skip-detection doesn't flag itself.
+- **Stub detection expanded**: multi-line `except:`/`pass`, empty JS
+  `catch {}`, Rust `todo!()`/`unimplemented!()`, checker suppressions
+  (`# noqa`, `# type: ignore`, `eslint-disable`, `@ts-ignore`) and coverage
+  exclusions (`# pragma: no cover`) in changed code; findings aggregated
+  per file.
+- **`require:` contract section**: `changed: [globs]` ("done includes a test
+  change") and `non_empty_diff: true` (the agent must have done *something*).
+- **`strict` mode** (`strict: true` or `--strict`): warnings become failures.
+- **`--allow CHECK`**: human escape hatch that downgrades a reviewed failing
+  check to a warning; deliberately CLI-only so agents can't self-grant it.
+- **Hints on every failure** (`fix: ...` in text output, `hint` in JSON) so
+  agents consuming verdicts are steered to the honest fix.
+- **Verdict upgrades**: `summary` counts, `meta` (base ref, files changed),
+  tool version in `--json`; full failing-command output shown in text mode.
+- **CLI**: color output (`NO_COLOR` respected), `-q/--quiet`,
+  `dunnit init` auto-detects pytest/ruff/npm/go/cargo, `--force` overwrite,
+  `dunnit snippet codex` for AGENTS.md-driven agents.
+- **Per-check `dir` and `env`** in dod.yaml; command duration reported.
+- **Strict contract schema**: unknown keys in dod.yaml are errors, so a typo
+  like `protectd:` can't silently disable protection.
+- Proper `**` glob semantics (gitignore-style) replacing fnmatch quirks;
+  renames tracked with old path; protected-path check covers moves and
+  newly created files (the contract's own first commit is exempt).
+
 ## 0.2.0 - 2026-07-28
 
 - **Protected paths**: `protected:` globs fail verification when touched.
