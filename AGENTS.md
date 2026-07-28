@@ -6,22 +6,26 @@ Guidance for AI coding agents (Codex, Claude Code, Cursor, etc.) working in this
 
 `dunnit` is a pip-installable verifier for AI agent work. Users declare a
 definition of done in `dod.yaml`; `dunnit verify` re-runs the declared proof
-commands and inspects the git diff for test-gaming (deleted tests, added
-skips, removed assertions, touched protected files, stubbed code). Output is
-✓/✗ evidence plus an exit code (0 pass, 1 fail, 2 contract error) or `--json`.
+commands and inspects the git diff (tracked + untracked) for test-gaming
+(deleted/renamed-away tests, added skips or `.only` focus markers, removed or
+trivialized assertions, test-config deselection, touched protected files,
+stubbed code). Output is ✓/✗ evidence with per-failure hints plus an exit
+code (0 pass, 1 fail, 2 contract error) or `--json`.
 
 ## Layout
 
-- `src/dunnit/contract.py` — parse/validate `dod.yaml` into `Contract`
-- `src/dunnit/gitdiff.py` — git diff collection (`FileDiff`) and glob matching
-- `src/dunnit/checks/commands.py` — run proof commands
-- `src/dunnit/checks/tamper.py` — test-gaming detection (FAIL-level)
-- `src/dunnit/checks/protected.py` — protected-path enforcement (FAIL-level)
-- `src/dunnit/checks/stubs.py` — stub/TODO detection (WARN-level)
-- `src/dunnit/runner.py` — orchestrates checks into a `Verdict`
-- `src/dunnit/verdict.py` — `Verdict`/`Evidence`/`Status` models
-- `src/dunnit/cli.py` — `init`, `verify`, `snippet` subcommands
-- `tests/` — pytest suite; `conftest.py` provides a temp git repo fixture
+- `src/dunnit/contract.py` — parse/validate `dod.yaml` into `Contract` (strict schema)
+- `src/dunnit/gitdiff.py` — diff collection (`FileDiff`, incl. untracked files) and `**` glob matching
+- `src/dunnit/lines.py` — shared line heuristics (string-literal guard)
+- `src/dunnit/checks/commands.py` — run proof commands (per-check `dir`/`env`)
+- `src/dunnit/checks/tamper.py` — test-gaming detection, extension-scoped patterns (FAIL-level)
+- `src/dunnit/checks/protected.py` — protected-path enforcement, rename-aware (FAIL-level)
+- `src/dunnit/checks/stubs.py` — stub/suppression detection, aggregated (WARN-level)
+- `src/dunnit/checks/require.py` — positive requirements: `require.changed`, `non_empty_diff` (FAIL-level)
+- `src/dunnit/runner.py` — orchestrates checks into a `Verdict`; applies `strict`/`--allow` policy
+- `src/dunnit/verdict.py` — `Verdict`/`Evidence`/`Status` models (hints, summary, meta)
+- `src/dunnit/cli.py` — `init` (toolchain autodetect), `verify`, `snippet` subcommands
+- `tests/` — pytest suite; `conftest.py` provides temp git repo + commit fixtures
 
 ## Commands
 
