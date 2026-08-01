@@ -37,7 +37,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "twine>=5.0",
-    "types-PyYAML>=6.0",
+    "types-PyYAML>=6.0.12.20260724",
 ]
 
 [project.scripts]
