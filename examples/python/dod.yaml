@@ -1,0 +1,28 @@
+# This example assumes pytest is configured in pytest.ini and Ruff is configured
+# in pyproject.toml; `dunnit init` protects whichever concrete signals it detects.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["python", "-m", "pytest", "-q"]
+    timeout: 600
+    writes: []
+  - name: lint
+    argv: ["python", "-m", "ruff", "check", "."]
+    timeout: 300
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - pytest.ini
+  - pyproject.toml
+
+test_globs:
+  - tests/**
+  - "**/test_*.py"
+  - "**/*_test.py"
+
+tamper: true
+stubs: true
+strict: false

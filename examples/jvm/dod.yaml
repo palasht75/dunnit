@@ -1,0 +1,21 @@
+# Starting point for a Maven JVM repository with tests already configured.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["mvn", "--batch-mode", "test"]
+    timeout: 900
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - pom.xml
+
+test_globs:
+  - "**/*Test.java"
+  - "**/*Test.kt"
+
+tamper: true
+stubs: true
+strict: false

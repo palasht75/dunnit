@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/palasht75/dunnit/security/advisories/new
+    about: Report a candidate-controlled pass bypass or other sensitive issue privately.
+  - name: Read the adoption guide
+    url: https://github.com/palasht75/dunnit#five-minute-github-required-check
+    about: Start with the local and GitHub quick-start documentation.

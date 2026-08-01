@@ -1,0 +1,61 @@
+name: False positive
+description: Submit a minimized benign diff that Dunnit flags.
+title: "false positive: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        False-positive controls are part of the product. Please minimize the case
+        and replace private names/content before posting it publicly.
+  - type: input
+    id: version
+    attributes:
+      label: Dunnit version
+      placeholder: "1.0.0a1"
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID and fingerprint
+      placeholder: "tamper:added-skips; fingerprint if present"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Python, and Git versions
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Minimized contract
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: diff
+    attributes:
+      label: Minimized benign diff
+      description: Explain why the change is benign and include only redistributable synthetic content.
+      render: diff
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Sanitized evidence
+      description: Include rule, path/line, severity, and detail. Do not paste secrets or unrelated command output.
+      render: json
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Corpus consent
+      options:
+        - label: This minimized synthetic case may be redistributed under the repository's MIT license.
+          required: true
+        - label: This issue contains no private source, secrets, repository remote, or personal data.
+          required: true

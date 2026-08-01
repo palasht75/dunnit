@@ -1,28 +1,39 @@
-# Example dunnit contract showing every option.
-# Most projects need only `checks:` — the rest has sane defaults.
-version: 1
+# Complete contract v2 example. Copy only requirements your repository owns.
+version: 2
 
-base: origin/main        # git ref to diff against; default HEAD (uncommitted work)
+# Local default. CI should override this with the event's immutable base SHA.
+base: origin/main
 
-checks:                  # proof commands; each must exit 0
+checks:
+  # argv bypasses the shell and is the portable default.
   - name: tests
-    run: pytest -q
-    timeout: 600         # seconds (default 600)
-  - name: lint
-    run: ruff check .
-  - name: frontend-tests
-    run: npm test --silent
-    dir: frontend        # working directory relative to the repo root
-    env: { CI: "1" }     # extra environment variables
+    argv: ["python", "-m", "pytest", "-q"]
+    timeout: 600
+    dir: "."
+    env: {CI: "1"}
+    writes: []
 
-protected:               # touching these fails verification (default: [dod.yaml])
+  # Use run only when a shell feature is intentional.
+  - name: distribution
+    run: "python -m build && python -m twine check dist/*"
+    timeout: 300
+    writes:
+      - build/**
+      - dist/**
+
+protected:
   - dod.yaml
   - .github/**
+  - pytest.ini
 
-require:                 # the work must actually be present
-  changed: [tests/**]    # "done" includes a new or updated test
-  non_empty_diff: true   # an empty diff is not a completed task
+test_globs:
+  - tests/**
+  - "**/test_*.py"
+  - "**/*_test.py"
 
-tamper: true             # deleted/skipped/focused tests, weakened assertions, config gaming
-stubs: true              # warn on TODOs / stubbed code / suppressions in the diff
-strict: false            # true: promote those warnings to failures
+require:
+  non_empty_diff: true
+
+tamper: true
+stubs: true
+strict: false

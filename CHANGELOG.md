@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.0a1 - 2026-08-01
+
+Trust-root hardening alpha. This prerelease is for corpus validation and
+external pilots; stable 1.0.0 remains gated on five independent repositories.
+
+- Load local policy from committed `HEAD` and CI policy from the resolved
+  target commit; Git, policy, shallow-history, and incomplete-scan failures now
+  produce a fail-closed `error` outcome.
+- Capture candidate integrity before proof commands and audit post-command
+  workspace changes against explicit v2 `writes` paths.
+- Add contract v2, shell-free `argv`, strict types and duplicate-key rejection,
+  bounded/sanitized process output, and process-tree timeout termination.
+- Add `init` presets, `doctor`, v1 migration, JSON Schema, GitHub/JUnit output,
+  versioned JSON reports, and a pinned GitHub required-check workflow.
+- Add cross-platform Git topology coverage, a public benchmark protocol, and
+  honest threat-model, validation, migration, and pilot documentation.
+- Enforce exact SHA-1/SHA-256 object-ID widths, resolve Windows `PATHEXT`
+  command shims, attempt descendant cleanup even after a command root exits,
+  and materialize every detector-evidence manifest and lockfile as protected.
+
 ## 0.3.0 - 2026-07-28
 
 Detection depth and agent-feedback release.

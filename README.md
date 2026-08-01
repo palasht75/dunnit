@@ -1,290 +1,387 @@
 # dunnit
 
-**Did the agent actually do it?**
+**Offline, deterministic verification for repository-owned definitions of done.**
 
 [![PyPI](https://img.shields.io/pypi/v/dunnit)](https://pypi.org/project/dunnit/)
-[![CI](https://github.com/palasht75/dunnit/actions/workflows/ci.yml/badge.svg)](https://github.com/palasht75/dunnit/actions)
+[![CI](https://github.com/palasht75/dunnit/actions/workflows/ci.yml/badge.svg)](https://github.com/palasht75/dunnit/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/dunnit)](https://pypi.org/project/dunnit/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/palasht75/dunnit/blob/main/LICENSE)
 
-AI coding agents claim completion when work isn't done. They delete failing
-tests, add `@pytest.mark.skip`, focus a single passing test with `.only`,
-hardcode expected outputs, stub functions with `NotImplementedError`, edit the
-test config so failing tests never run — and then report success. Researchers
-call it [reward hacking](https://arxiv.org/html/2511.21654) and have measured
-it across [frontier models](https://arxiv.org/abs/2605.02964) and
-[long-horizon coding tasks](https://arxiv.org/html/2605.21384v1); developers
-ranked agents "lying about task completion" among the
-[top pain points of 2026](https://dev.to/hadil/why-ai-agents-fail-in-production-and-how-engineering-teams-are-fixing-it-in-2026-job).
+> **Pre-release status:** `1.0.0a1` is the first trust-hardening release. The
+> external-validation program is specified, but its results have not been
+> published yet. Do not interpret the alpha label—or this README—as evidence
+> that five independent teams rely on Dunnit today.
 
-**dunnit is the trust layer between "the agent says done" and "it is done."**
-You declare a machine-checkable definition of done in `dod.yaml`. `dunnit verify`
-re-runs the proof itself and inspects the git diff — including untracked
-files — for gaming. It never trusts the transcript, and it won't let the agent
-rewrite the contract either.
+AI coding agents can produce a green test run after deleting a failing test,
+adding a skip, focusing one passing test, changing test discovery, or leaving a
+stub behind. Dunnit complements ordinary CI by re-running an explicit proof
+contract and inspecting the candidate Git change for those integrity failures.
+
+Dunnit answers a deliberately narrow question:
+
+> Did the repository's trusted, machine-checkable contract run completely, and
+> did the candidate change avoid the diff-integrity failures Dunnit knows how to
+> detect?
+
+It does **not** prove that an implementation matches unstated human intent, is
+secure, or is free of bugs. A successful result is reported as **contract
+satisfied**, not “the agent definitely did it.”
+
+- Dunnit's core is offline after installation: no service, account, telemetry,
+  or LLM. Repository-owned proof commands retain their own network behavior.
+- Deterministic core with PyYAML as its only runtime dependency.
+- Portable argument-vector checks plus an explicit shell-command escape hatch.
+- Fail-closed Git and scan errors; incomplete verification cannot pass.
+- Text, JSON, GitHub annotation, and JUnit output for humans and automation.
+
+Research such as [EvilGenie](https://arxiv.org/html/2511.21654) and
+[SpecBench](https://arxiv.org/html/2605.21384v1) motivates the reward-hacking
+problem. It does not validate Dunnit itself. See [Validation](https://github.com/palasht75/dunnit/blob/main/docs/validation.md)
+for the evidence bar this project uses.
+
+## Local quick start
+
+From the repository root:
 
 ```bash
-pip install dunnit
-dunnit init      # writes dod.yaml, auto-detecting your toolchain
-dunnit verify    # ✓ / ✗ evidence + exit code
+# Once 1.0.0a1 is published; keep the version pinned in automation.
+python -m pip install "dunnit==1.0.0a1"
+
+# Preview only evidence-backed toolchain detection, then materialize it.
+dunnit init --preset auto --dry-run
+dunnit init --preset auto
+
+# Review dod.yaml. Before its first commit, verification is explicitly bootstrap-only.
+dunnit verify --bootstrap
+git add dod.yaml
+git commit -m "Add Dunnit verification contract"
+
+# Check Git/history, policy trust, commands, paths, and schema after committing it.
+dunnit doctor
+dunnit verify
 ```
 
-Zero dependencies beyond PyYAML. No LLM, no network, deterministic.
+`init` never writes an empty contract. If detection is ambiguous or finds no
+declared test harness, it exits with guidance instead of inventing a command.
+Bootstrap is local-only and is labeled in the report; CI never accepts it.
 
-## 60-second demo
+## Five-minute GitHub required check
 
-An agent is asked to fix `mul()`. Instead it skips the failing test and stubs
-the code:
-
-```diff
---- a/test_app.py
-+++ b/test_app.py
-+import pytest
-+@pytest.mark.skip
- def test_mul():
--    assert mul(2, 3) == 6
-+    pass
---- a/app.py
-+++ b/app.py
- def mul(a, b):
--    return a * b
-+    # TODO fix later
-+    raise NotImplementedError
-```
-
-The agent reports: *"All tests pass ✅ Task complete."* dunnit disagrees:
-
-```text
-$ dunnit verify
- ✓ smoke: `python -c "import app"` exited 0 in 0.1s
- ✓ protected: no protected files touched
- ✗ tamper:added-skips: test_app.py: skip markers added: ['@pytest.mark.skip']
-   fix: Remove the skip/xfail marker and fix the code so the test passes.
- ✗ tamper:removed-assertions: net assertions removed from tests (1 removed vs 0 added)
-   fix: Restore the removed assertions — weakening tests does not complete the task.
- ! stubs:not-implemented: app.py: raise NotImplementedError
-   fix: Implement the function — a stub that raises is not a completed task.
- ! stubs:todo-left-behind: app.py: # TODO fix later
-   fix: Finish the work the marker refers to, or drop it if it is stale.
-
-verdict: FAIL — it did not do it (2 failed, 2 warned, 2 passed)
-$ echo $?
-1
-```
-
-Every failure carries a `fix:` hint, so an agent consuming the verdict is
-steered toward fixing the real problem instead of the checker.
-
-## What it checks
-
-**Proof commands** (FAIL): every command under `checks:` must exit 0. dunnit
-runs them itself — "the tests passed" in a transcript is not evidence.
-
-**Tamper detection** (FAIL) — the diff is inspected for classic test-gaming:
-
-| Check | Catches |
-|---|---|
-| `tamper:deleted-tests` | Test files deleted **or renamed to non-test paths** |
-| `tamper:added-skips` | Skip/xfail markers added: `pytest.mark.skip`, `unittest.skip`, `it.skip`, `xit`, `t.Skip()`, `#[ignore]`, `@Disabled`, `markTestSkipped`, … |
-| `tamper:focused-tests` | `.only` / `fit` / `fdescribe` added — focusing one test silently deselects the rest of the suite |
-| `tamper:removed-assertions` | Net loss of assertion lines in test files |
-| `tamper:trivial-assertions` | `assert True`, `expect(true).toBe(true)` added to tests |
-| `tamper:test-config` | Deselection added to runner config: `--ignore`, `--deselect`, `collect_ignore`, `norecursedirs`, `testPathIgnorePatterns`, coverage `omit`, … |
-| `tamper:test-config-changed` | Any other edit to a dedicated test config (WARN — review it) |
-| `tamper:protected-path` | Protected files touched, moved, or created — **including `dod.yaml` itself** |
-
-**Positive requirements** (FAIL): `require:` asserts the work is actually
-present — e.g. "done includes a test change" or "the diff must not be empty".
-
-**Stub detection** (WARN, or FAIL with `strict`): `TODO`/`FIXME` left in
-changed code, `NotImplementedError` / `todo!()` stubs, swallowed exceptions
-(`except: pass`, empty `catch {}`), and suppression comments (`# noqa`,
-`# type: ignore`, `eslint-disable`, `@ts-ignore`, `# pragma: no cover`) added
-in new code.
-
-Detection patterns are scoped by file extension across Python, JS/TS, Go,
-Rust, JVM (Java/Kotlin/Scala), Ruby, C#, and PHP — `fit(` is a Jasmine focus
-marker in a `.ts` test but curve-fitting in a `.py` file. Markers inside
-string literals are ignored, so a test suite that *tests* skip-detection
-doesn't flag itself.
-
-The meta-hack is covered too: editing the verifier's config to weaken the
-definition of done. `dod.yaml` is protected by default, so that diff is
-itself a FAIL. Untracked files are inspected as well — a brand-new stubbed
-file the agent never staged still shows up in the verdict.
-
-## dod.yaml reference
+First commit a reviewed `dod.yaml` on the default branch. Then add the workflow
+below as `.github/workflows/dunnit.yml`. The workflow intentionally installs
+only the exact Dunnit release before verification. Do not install or build the
+candidate project first: candidate-controlled build hooks could change the
+worktree before Dunnit's initial snapshot. The workflow is intended for the
+published `1.0.0a1` release; update the exact pin deliberately for later releases.
 
 ```yaml
-version: 1
-base: origin/main        # git ref to diff against; default HEAD (uncommitted work)
-checks:                  # proof commands, each must exit 0
-  - name: tests
-    run: pytest -q
-    timeout: 600         # seconds, optional (default 600)
-  - name: backend-lint
-    run: ruff check .
-    dir: backend         # optional working directory
-    env: { CI: "1" }     # optional extra environment
-protected:               # touching these fails verification (default: [dod.yaml])
-  - dod.yaml             # globs are gitignore-style: no slash = any depth,
-  - .github/**           # leading / anchors to the repo root, ** crosses dirs
-  - tests/**             # optional: freeze tests entirely for agent changes
-require:                 # the work must actually be present
-  changed: [tests/**]    # each glob must match >=1 changed file ("done includes a test")
-  non_empty_diff: true   # fail if the diff is empty (agent did nothing)
-test_globs:              # what counts as a test file (defaults cover py/js/go/rust/jvm/ruby)
-  - tests/**
-  - "**/test_*.py"
-tamper: true             # diff-based test-gaming checks
-stubs: true              # stub/suppression detection in changed code
-strict: false            # true: promote warnings to failures
+name: dunnit
+
+"on":
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install pinned Dunnit
+        run: python -m pip install "dunnit==1.0.0a1"
+
+      - name: Verify the pull request
+        env:
+          DUNNIT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          dunnit verify --ci
+          --base "$DUNNIT_BASE_SHA"
+          --policy-ref "$DUNNIT_BASE_SHA"
+          --format github
+          --report dunnit-report.json
+
+      - name: Retain the machine-readable report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dunnit-report
+          path: dunnit-report.json
+          if-no-files-found: error
+          retention-days: 14
 ```
 
-Unknown keys are contract errors — a typo can't silently disable a
-protection.
+The full-history checkout is intentional. In CI mode Dunnit resolves the target,
+merge base, and candidate to full SHAs and loads the policy from the trusted base
+SHA. Missing shallow history is an error, never a skipped warning.
+
+Proof tools are not magically present on every hosted runner. Supply them in a
+reviewed runner image/environment, or make dependency setup the first command in
+the trusted contract so Dunnit captures the candidate before setup executes. For
+example, a Python repository with a reviewed requirements file can materialize:
+
+```yaml
+checks:
+  - name: dependencies
+    argv: ["python", "-m", "pip", "install", "-r", "requirements-dev.txt"]
+    timeout: 600
+    writes: []
+  - name: tests
+    argv: ["python", "-m", "pytest", "-q"]
+    timeout: 600
+    writes: []
+```
+
+Keep `writes` empty when setup should not touch the repository; otherwise list
+only its necessary generated paths. A contract command still executes untrusted
+repository code and is not sandboxed, but its starting diff is already retained
+and its worktree mutations are checked. Any candidate-controlled install, build,
+hook, or script run before `dunnit verify` is outside Dunnit's captured evidence.
+
+This repository-local workflow is a deployment template, not an immutable
+enforcement boundary by itself. An ordinary `pull_request` can propose changes
+to the workflow that invokes Dunnit; requiring only a familiar job name does
+not prove that the trusted workflow definition ran. Where available, use a
+target-branch or organization-owned required-workflow ruleset. Otherwise,
+require CODEOWNERS review for `dod.yaml` and `.github/workflows/**`, require the
+`dunnit / verify` status check, and disallow rule bypass. Dunnit's protected-path
+finding can report a workflow edit only after a trusted workflow has invoked
+Dunnit; it cannot defend an invocation that the candidate disabled or replaced.
+
+After one or more shadow runs, configure those controls in the repository or
+organization rules. Start with the [shadow workflow](https://github.com/palasht75/dunnit/blob/main/examples/github/dunnit-shadow.yml)
+if you need to measure noise before blocking merges; the
+[required workflow](https://github.com/palasht75/dunnit/blob/main/examples/github/dunnit-required.yml) is the copyable version
+above.
+
+## Contract v2
+
+Presets only generate YAML. A package upgrade does not silently change a
+materialized contract. Generation protects the concrete configuration,
+manifest, workspace, and package-manager lockfiles used as detection evidence;
+malformed or unmatched workspace declarations stop with guidance instead of
+silently producing a partial monorepo contract.
+
+```yaml
+version: 2
+base: origin/main
+
+checks:
+  - name: tests
+    argv: ["python", "-m", "pytest", "-q"]
+    timeout: 600
+    dir: "."
+    env: {CI: "1"}
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - pytest.ini
+
+test_globs:
+  - tests/**
+  - "**/test_*.py"
+
+require:
+  non_empty_diff: true
+
+tamper: true
+stubs: true
+strict: false
+```
+
+Each check uses exactly one execution form:
+
+- `argv`: a non-empty list of non-empty strings, executed directly without a
+  shell. This is the portable default.
+- `run`: a non-empty string interpreted by the operating system's native shell.
+  Use it only when pipes, redirects, expansion, or another shell feature is
+  genuinely required.
+
+`timeout` must be a positive integer number of seconds. `dir` and every `writes` glob
+must stay inside the repository root. `writes` declares generated paths a proof
+command may change; undeclared command mutations fail verification. Check names
+are unique, slug-like identifiers and environment values are strings. Duplicate
+YAML keys, unknown keys, unsupported versions, and no-op policies are errors.
+
+See the [complete contract](https://github.com/palasht75/dunnit/blob/main/examples/dod.yaml),
+the [ecosystem examples](https://github.com/palasht75/dunnit/tree/main/examples),
+the packaged [contract v2 JSON Schema](https://github.com/palasht75/dunnit/blob/main/src/dunnit/dod-v2.schema.json),
+and the [v1 migration guide](https://github.com/palasht75/dunnit/blob/main/docs/migration-v2.md).
+
+## Verification model
+
+Dunnit performs these operations in order:
+
+1. Discover the Git worktree root and resolve the candidate and comparison base.
+2. Load the policy from committed `HEAD` in local mode or the trusted target SHA
+   in CI mode.
+3. Capture and evaluate the candidate diff before any proof command runs.
+4. Run proof commands with bounded output and process-tree timeouts.
+5. Capture the diff again, retain all original findings, and reject undeclared
+   command mutations.
+6. Emit evidence and scan-completeness metadata.
+
+The pre-command snapshot means a test command cannot hide an original skip or
+deleted test by restoring files before inspection. Git/base failures, missing
+policy in CI, incomplete path enumeration, unreadable required content, and
+empty evidence produce an `error` outcome rather than a pass.
+
+### What it checks
+
+| Area | Examples | Default effect |
+|---|---|---|
+| Proof commands | Tests, lint, type checks, builds declared by the repository | Fail |
+| Protected paths | Contract, workflow, runner configuration, team-selected paths | Fail |
+| Test tampering | Deleted or renamed-away tests, added skips/focus, weakened or trivial assertions | Fail |
+| Test configuration | Clear deselection/ignore/omit additions and broad-to-path test-command narrowing | Fail |
+| Ambiguous test-config edits | Other changes requiring human review | Warning; fail in strict mode |
+| Positive requirements | Required changed paths and non-empty candidate change | Fail |
+| Stubs and suppression | TODO/FIXME, unimplemented code, swallowed errors, lint/type/coverage suppression | Warning; fail in strict mode |
+| Command mutation | Tracked or relevant untracked changes outside declared `writes` | Fail |
+| Verification completeness | Git resolution and path/content scan coverage | Error |
+
+Patterns are scoped by file type across Python, JavaScript/TypeScript, Go,
+Rust, JVM languages, Ruby, C#, and PHP. They are heuristics: use them as a
+review signal, not a semantic proof engine.
+
+### Outcomes and exit codes
+
+| Outcome | Meaning | Exit code |
+|---|---|---:|
+| `pass` | Complete verification with no failures or warnings | 0 |
+| `pass_with_warnings` | Complete verification with review findings only | 0 |
+| `fail` | The contract or integrity policy was not satisfied | 1 |
+| `error` | Contract, Git, execution, or scan infrastructure was incomplete | 2 |
+
+`strict: true` promotes warnings to failures. `Verdict.passed` is false for
+`fail`, `error`, and every incomplete verification.
 
 ## CLI
 
 ```text
-dunnit init [--force]        write dod.yaml, auto-detecting pytest/npm/go/cargo
-dunnit verify                verify and print ✓/✗ evidence; exit 0 pass / 1 fail / 2 contract error
-  -c, --config PATH          contract file (default dod.yaml)
-  -b, --base REF             override the diff base (CI: the merge base)
-  --json                     machine-readable verdict
-  --strict                   treat warnings as failures
-  --allow CHECK              downgrade a failing check to a warning (repeatable)
-  -q, --quiet                only print failures and warnings
-dunnit snippet TARGET        print integration config: claude | cursor | codex | github | pre-commit
+dunnit init [--preset auto|python|node|go|rust|mixed] [--dry-run] [--force]
+dunnit doctor [--json] [-c PATH] [-b REF] [--ci] [--policy-ref REF]
+dunnit migrate --dry-run|--write [-c PATH]
+dunnit verify [-c PATH] [-b REF] [--ci] [--policy-ref REF]
+              [--format text|json|github|junit] [--report PATH]
+              [--bootstrap] [--strict] [--allow CHECK] [-q]
+dunnit snippet github [--mode shadow|required]
+dunnit snippet claude|cursor|codex|pre-commit
 ```
 
-`--allow` is the human escape hatch: when you *reviewed* a test deletion and
-it's legitimate, run `dunnit verify --allow tamper:deleted-tests` yourself.
-It's a CLI flag rather than a `dod.yaml` key on purpose — the pinned command
-in CI or your agent hook doesn't include it, so the agent can't grant itself
-exceptions.
+`--json` remains as a compatibility alias for `--format json`. `--allow` is a
+human-controlled, repeatable downgrade for reviewed `check` identifiers; do not put it in
+agent instructions or the required CI command. While adopting the workflow,
+resolve the trusted target to a full SHA and run both readiness checks against
+that same identity:
 
-## Use it where agents work
-
-### Claude Code — block "done" until it's true
-
-`dunnit snippet claude` prints this; add it to `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "dunnit verify >&2 || exit 2" } ] }
-    ]
-  }
-}
+```bash
+BASE_SHA="$(git rev-parse origin/main)"
+dunnit doctor --ci --policy-ref "$BASE_SHA" --base "$BASE_SHA"
 ```
 
-Exit code 2 blocks Claude from stopping and feeds the failing evidence —
-including the `fix:` hints — back into its context, so it fixes the real
-problem instead of declaring victory.
+Reports contain a schema version, tool version, policy origin and digest,
+resolved Git SHAs, OS/Python/Git context, command results, waivers, duration,
+and scan completeness. They do not include telemetry or the repository remote.
+Treat command output as potentially sensitive before publishing an artifact.
+See the [report and formatter contract](https://github.com/palasht75/dunnit/blob/main/docs/reporting.md) for compatibility and
+privacy guidance.
 
-### Cursor — make the rule explicit
+## Python API
 
-`dunnit snippet cursor` → save as `.cursor/rules/dunnit.mdc`. The rule tells
-the agent to run `dunnit verify` before claiming completion and never to
-touch the contract, tests, or CI to make it pass.
-
-### Codex / AGENTS.md agents
-
-`dunnit snippet codex` prints a "Definition of done" section to append to
-your `AGENTS.md` — any agent that reads `AGENTS.md` (Codex, Claude Code,
-Cursor, …) will treat `dunnit verify` as the completion gate.
-
-Belt-and-braces: even if the agent ignores the rule, running `dunnit verify`
-in CI (below) catches the gamed diff before merge.
-
-### GitHub Actions — gate the merge
-
-`dunnit snippet github`:
-
-```yaml
-      - name: dunnit verify
-        run: |
-          pip install dunnit
-          git fetch origin ${{ github.base_ref || 'main' }}
-          dunnit verify --base origin/${{ github.base_ref || 'main' }} --json
-```
-
-### pre-commit
-
-`dunnit snippet pre-commit` prints a local hook that runs on every commit.
-
-### Python API
+Existing call patterns remain valid; v1.0 adds explicit local/CI policy modes.
 
 ```python
-from dunnit import verify
+from dunnit import Outcome, verify
 
-verdict = verify("dod.yaml", base="origin/main", strict=True)
-if not verdict.passed:
-    for e in verdict.evidence:
-        print(e.check, e.status.value, e.detail, e.hint)
+base_sha = "0123456789abcdef0123456789abcdef01234567"  # trusted CI event value
+verdict = verify(
+    "dod.yaml",
+    base=base_sha,
+    mode="ci",
+    policy_ref=base_sha,
+    strict=True,
+)
+
+if verdict.outcome in {Outcome.FAIL, Outcome.ERROR}:
+    for item in verdict.evidence:
+        print(item.rule_id, item.status.value, item.path, item.line, item.detail)
 ```
 
-### Machine-readable verdicts
+Evidence may include a rule ID, path, line, stable fingerprint, severity,
+duration, command exit code, and scan-completeness fields. Consumers should
+ignore unknown report fields so additive schema revisions remain compatible.
 
-`dunnit verify --json` emits structured evidence for orchestrators and bots:
+## Trust boundary and limitations
 
-```json
-{
-  "tool": "dunnit",
-  "version": "0.3.0",
-  "verdict": "fail",
-  "summary": {"pass": 2, "fail": 1, "warn": 1},
-  "evidence": [
-    {"check": "tests", "status": "pass", "detail": "`pytest -q` exited 0 in 3.1s"},
-    {"check": "tamper:added-skips", "status": "fail", "detail": "test_app.py: ...",
-     "hint": "Remove the skip/xfail marker and fix the code so the test passes."}
-  ],
-  "meta": {"base": "origin/main", "files_changed": 3}
-}
+CI mode assumes the target SHA supplied by the CI platform is trusted and that
+the base branch protects its workflow and contract. Proof commands execute
+repository code with the current user's permissions; Dunnit is not a sandbox.
+Anyone who controls the trusted base, runner, Git executable, dependencies, or
+required CI settings can control the result.
+
+Dunnit cannot establish unstated requirements, review architecture, find every
+security issue, eliminate flaky tests, or reliably infer whether an arbitrary
+code change is malicious. Binary or oversized content that cannot be inspected
+must be reported through scan-completeness evidence. Local mode is useful for
+feedback but is not equivalent to a protected CI gate.
+
+Read the complete [threat model](https://github.com/palasht75/dunnit/blob/main/docs/threat-model.md),
+[support matrix and known limitations](https://github.com/palasht75/dunnit/blob/main/docs/support.md),
+and [security policy](https://github.com/palasht75/dunnit/blob/main/SECURITY.md).
+
+## False positives and reviewed exceptions
+
+Diff heuristics trade recall against noise. Stubs and ambiguous configuration
+changes are warnings by default, while clear test deselection and broad-to-path
+test-command narrowing fail. Findings are aggregated and string literals are
+guarded where practical. For a legitimate exception, a human can run:
+
+```bash
+dunnit verify --allow tamper:deleted-tests
 ```
 
-## False positives
+The report records the waiver. Never bake it into the agent-facing or required
+CI command. Please use the [false-positive issue form](https://github.com/palasht75/dunnit/issues/new?template=false-positive.yml)
+with a minimized, non-sensitive reproduction.
 
-Diff heuristics are heuristics. dunnit keeps the noise down by design:
+## Validation status
 
-- Patterns are extension-scoped, so language idioms don't cross-contaminate.
-- Markers inside string literals are ignored.
-- Stub findings are aggregated per file, so a big diff can't flood the verdict.
-- Stub/suppression findings are WARN by default; opt into `strict` when ready.
-- For reviewed exceptions, a human runs `--allow <check>` — the agent-facing
-  pinned command never includes it.
+No qualifying external-reliance result or “normal CI miss” is claimed until the
+public protocol's gates are met. The project will publish seeded benchmark
+results separately from real incidents, including false positives, errors, and
+confidence intervals. The stable `1.0.0` release is withheld until the external
+reliance gate is complete.
 
-If you hit a false positive these don't cover, please open an issue — the
-detection corpus is the product.
+- [External pilot and evidence rules](https://github.com/palasht75/dunnit/blob/main/docs/validation.md)
+- [Preregistered benchmark protocol](https://github.com/palasht75/dunnit/blob/main/benchmarks/PROTOCOL.md)
+- [Release gates from alpha to stable](https://github.com/palasht75/dunnit/blob/main/docs/release-gates.md)
 
-## Why not just CI?
+## Development
 
-CI runs your tests. It does not notice that the agent *deleted* the failing
-test, skipped it, focused its one passing sibling, or edited the runner
-config so it never executes. dunnit checks the diff for exactly those moves,
-protects its own contract, and gives agents a verdict they can consume
-mid-task — before the PR is ever opened.
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python -m ruff check src tests
+dunnit verify
+```
 
-## Design principles
-
-1. **Never trust the transcript.** Every claim is re-verified by execution.
-2. **The contract is part of the attack surface.** `dod.yaml` is protected by
-   default, and unknown keys are errors.
-3. **Zero LLM in the core.** Deterministic, fast, free, offline. (An optional
-   LLM judge is on the roadmap as an *additional* signal, never the only one.)
-4. **Model- and framework-agnostic.** Works with Cursor, Claude Code, Codex,
-   Devin, or hand-written diffs — dunnit only looks at the repo.
-5. **Verdicts teach.** Every failure carries a hint pointing at the honest
-   fix, because the consumer of a verdict is often the agent itself.
-
-## Roadmap
-
-pytest plugin · coverage non-regression · hardcoded-output detection ·
-optional LLM judge · MCP server (agents self-verify) · signed verdict
-attestations. Issues and PRs welcome.
+See [CONTRIBUTING.md](https://github.com/palasht75/dunnit/blob/main/CONTRIBUTING.md)
+before sending a change. Security reports belong in the private channel described
+in [SECURITY.md](https://github.com/palasht75/dunnit/blob/main/SECURITY.md).
 
 ## License
 
-MIT
+[MIT](https://github.com/palasht75/dunnit/blob/main/LICENSE)

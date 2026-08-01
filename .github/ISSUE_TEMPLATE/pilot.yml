@@ -1,0 +1,53 @@
+name: External pilot interest
+description: Volunteer an independently maintained repository for the consent-based validation pilot.
+title: "pilot: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read docs/validation.md first. This public form expresses interest only;
+        it does not grant access or consent to collect source, reports, or identity.
+  - type: input
+    id: ecosystem
+    attributes:
+      label: Ecosystem(s)
+      placeholder: "Python and TypeScript"
+    validations:
+      required: true
+  - type: dropdown
+    id: monorepo
+    attributes:
+      label: Repository shape
+      options:
+        - Single project
+        - Monorepo
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Preferred publication mode
+      options:
+        - Named repository
+        - Anonymized aggregate
+        - Decide after reviewing the data agreement
+    validations:
+      required: true
+  - type: textarea
+    id: ci
+    attributes:
+      label: Existing required CI and pull-request volume
+      description: Do not include private URLs, source, logs, or credentials.
+    validations:
+      required: true
+  - type: checkboxes
+    id: eligibility
+    attributes:
+      label: Eligibility
+      options:
+        - label: I maintain this repository, which is not owned by the Dunnit maintainer and was not created only for the study.
+          required: true
+        - label: I understand participation requires a separate, explicit data and publication agreement.
+          required: true
+        - label: I have not posted secrets, private source, or personal data in this issue.
+          required: true

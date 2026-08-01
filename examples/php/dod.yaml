@@ -1,0 +1,21 @@
+# Starting point for a Composer/PHPUnit repository with dependencies installed.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["php", "vendor/bin/phpunit"]
+    timeout: 600
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - phpunit.xml
+
+test_globs:
+  - tests/**
+  - "**/*Test.php"
+
+tamper: true
+stubs: true
+strict: false

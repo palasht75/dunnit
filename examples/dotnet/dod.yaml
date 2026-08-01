@@ -1,0 +1,21 @@
+# Starting point for a .NET repository whose solution restores separately.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["dotnet", "test", "--no-restore"]
+    timeout: 900
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - Directory.Build.props
+
+test_globs:
+  - "**/*Tests.cs"
+  - "**/*Test.cs"
+
+tamper: true
+stubs: true
+strict: false

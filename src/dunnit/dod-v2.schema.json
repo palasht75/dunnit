@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/palasht75/dunnit/raw/main/src/dunnit/dod-v2.schema.json",
+  "title": "Dunnit definition-of-done contract v2",
+  "description": "Schema for the explicit, portable Dunnit v2 contract. Presets materialize this format; they are not evaluated at verification time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": 2,
+      "description": "Contract schema version."
+    },
+    "base": {
+      "$ref": "#/$defs/gitRef"
+    },
+    "checks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/check"
+      },
+      "$comment": "JSON Schema cannot express uniqueness of one property across array items. Dunnit's runtime additionally requires explicit or generated check names to be unique."
+    },
+    "test_globs": {
+      "$ref": "#/$defs/pathList"
+    },
+    "protected": {
+      "$ref": "#/$defs/pathList"
+    },
+    "tamper": {
+      "type": "boolean",
+      "default": true
+    },
+    "stubs": {
+      "type": "boolean",
+      "default": true
+    },
+    "strict": {
+      "type": "boolean",
+      "default": false
+    },
+    "require": {
+      "$ref": "#/$defs/requirements"
+    }
+  },
+  "not": {
+    "description": "Reject an explicitly disabled policy that would produce no verification evidence.",
+    "allOf": [
+      {
+        "required": [
+          "protected",
+          "stubs"
+        ],
+        "properties": {
+          "checks": {
+            "maxItems": 0
+          },
+          "protected": {
+            "maxItems": 0
+          },
+          "stubs": {
+            "const": false
+          },
+          "require": {
+            "properties": {
+              "changed": {
+                "maxItems": 0
+              },
+              "non_empty_diff": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "anyOf": [
+          {
+            "required": [
+              "tamper"
+            ],
+            "properties": {
+              "tamper": {
+                "const": false
+              }
+            }
+          },
+          {
+            "required": [
+              "test_globs"
+            ],
+            "properties": {
+              "test_globs": {
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "$defs": {
+    "gitRef": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!-)(?=[\\s\\S]*\\S)[^\\u0000]+$",
+      "description": "A non-blank Git revision that is not option-like. Resolution is verified by Dunnit."
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!\\.\\.(?:[\\\\/]|$))(?!.*[\\\\/]\\.\\.(?:[\\\\/]|$))[^\\u0000]+$",
+      "description": "A path or glob contained by the repository root on POSIX and Windows."
+    },
+    "pathList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/repoPath"
+      }
+    },
+    "nonBlankString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000]+$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "run": {
+          "$ref": "#/$defs/nonBlankString",
+          "description": "An OS-native shell command. Prefer argv for portable contracts."
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "description": "An argument vector executed without a shell."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 600
+        },
+        "dir": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "env": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "minLength": 1,
+            "pattern": "^[^=\\u0000]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "writes": {
+          "$ref": "#/$defs/pathList",
+          "default": []
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "argv"
+          ],
+          "not": {
+            "required": [
+              "run"
+            ]
+          }
+        },
+        {
+          "required": [
+            "run"
+          ],
+          "not": {
+            "required": [
+              "argv"
+            ]
+          }
+        }
+      ]
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "changed": {
+          "$ref": "#/$defs/pathList",
+          "default": []
+        },
+        "non_empty_diff": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

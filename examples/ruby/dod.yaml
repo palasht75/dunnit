@@ -1,0 +1,21 @@
+# Starting point for a Bundler/RSpec repository with dependencies installed.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["bundle", "exec", "rspec"]
+    timeout: 600
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - .rspec
+
+test_globs:
+  - spec/**
+  - "**/*_spec.rb"
+
+tamper: true
+stubs: true
+strict: false

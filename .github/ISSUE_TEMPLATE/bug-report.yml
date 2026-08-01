@@ -1,0 +1,82 @@
+name: Bug report
+description: Report incorrect behavior that is not a sensitive verification bypass.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Candidate-controlled pass bypasses belong in a private security advisory,
+        not this public form. Remove secrets, private source, and repository remotes.
+  - type: input
+    id: version
+    attributes:
+      label: Dunnit version
+      placeholder: "1.0.0a1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS Intel
+        - macOS ARM64
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: runtimes
+    attributes:
+      label: Python and Git versions
+      placeholder: "Python 3.14.0; git 2.50.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Verification mode
+      options:
+        - Local
+        - CI
+        - Doctor, init, migrate, or snippet
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Minimized contract
+      description: Paste a sanitized dod.yaml if it is relevant.
+      render: yaml
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest synthetic repository state and exact command that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized evidence/report fields. Remove command output that may contain secrets.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I reproduced this on the newest supported Dunnit release.
+          required: true
+        - label: This report contains no secrets, private source, repository remote, or personal data.
+          required: true
+        - label: This is not an unpatched candidate-controlled pass bypass.
+          required: true

@@ -1,0 +1,54 @@
+name: dunnit-shadow
+
+"on":
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      # Proof dependencies must come from a reviewed runner image/environment,
+      # or from a setup check inside dod.yaml so Dunnit snapshots first.
+      - name: Install pinned Dunnit
+        run: python -m pip install "dunnit==1.0.0a1"
+
+      - name: Observe the pull request
+        id: dunnit
+        continue-on-error: true
+        env:
+          DUNNIT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          dunnit verify --ci
+          --base "$DUNNIT_BASE_SHA"
+          --policy-ref "$DUNNIT_BASE_SHA"
+          --format github
+          --report dunnit-report.json
+
+      - name: Retain the machine-readable report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dunnit-shadow-report
+          path: dunnit-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record shadow conclusion
+        if: always()
+        env:
+          DUNNIT_STEP_OUTCOME: ${{ steps.dunnit.outcome }}
+        run: echo "Dunnit shadow outcome=${DUNNIT_STEP_OUTCOME}"

@@ -17,7 +17,7 @@ from dunnit.verdict import Evidence, Status
 
 DOC_GLOBS = ["**/*.md", "**/*.rst", "**/*.txt", "docs/**", "LICENSE*", "CHANGELOG*"]
 
-_STUB_PATTERNS: list[tuple[re.Pattern, str, str]] = [
+_STUB_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     (
         re.compile(r"\b(?:TODO|FIXME|XXX)\b"),
         "todo-left-behind",
@@ -63,13 +63,13 @@ _EXCEPT_HEAD = re.compile(r"^\s*except\b[^:]*:\s*(?:#.*)?$")
 
 def check_stubs(diffs: list[FileDiff], test_globs: list[str]) -> list[Evidence]:
     # keyed by (path, label) -> [first offending line, count, hint]
-    found: dict[tuple[str, str], list] = {}
+    found: dict[tuple[str, str], tuple[str, int, str]] = {}
 
     def record(path: str, label: str, line: str, hint: str) -> None:
-        entry = found.setdefault((path, label), ["", 0, hint])
-        if entry[1] == 0:
-            entry[0] = line.strip()[:120]
-        entry[1] += 1
+        first, count, _ = found.get((path, label), ("", 0, hint))
+        if count == 0:
+            first = line.strip()[:120]
+        found[(path, label)] = (first, count + 1, hint)
 
     for d in diffs:
         if d.status == "D" or matches_any(d.path, test_globs) or matches_any(d.path, DOC_GLOBS):
@@ -90,7 +90,13 @@ def check_stubs(diffs: list[FileDiff], test_globs: list[str]) -> list[Evidence]:
     for (path, label), (first, count, hint) in sorted(found.items()):
         more = f" (+{count - 1} more)" if count > 1 else ""
         evidence.append(
-            Evidence(f"stubs:{label}", Status.WARN, f"{path}: {first}{more}", hint=hint)
+            Evidence(
+                f"stubs:{label}",
+                Status.WARN,
+                f"{path}: {first}{more}",
+                hint=hint,
+                path=path,
+            )
         )
     if not evidence:
         evidence.append(Evidence("stubs", Status.PASS, "no stub patterns in changed code"))

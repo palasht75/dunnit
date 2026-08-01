@@ -1,12 +1,24 @@
 # dunnit verifies dunnit. Run `dunnit verify` before claiming done.
-version: 1
+version: 2
 checks:
   - name: tests
-    run: python3 -m pytest -q
+    argv: [python, -m, pytest, -q]
+    timeout: 600
+    dir: .
+    env: {CI: "1"}
+    writes: []
   - name: lint
-    run: python3 -m ruff check src tests
+    argv: [python, -m, ruff, check, src, tests, benchmarks/aggregate.py]
+    timeout: 600
+    dir: .
+    env: {CI: "1"}
+    writes: []
 protected:
   - dod.yaml
   - .github/**
+test_globs:
+  - tests/**
+  - "**/test_*.py"
 tamper: true
 stubs: true
+strict: false

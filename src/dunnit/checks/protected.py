@@ -27,12 +27,18 @@ def check_protected(
         if any(matches_any(p, protected_globs) for p in paths):
             touched.append(f"{d.old_path} -> {d.path}" if d.old_path else d.path)
     if touched:
+        unique_touched = sorted(set(touched))
         return [
             Evidence(
                 "tamper:protected-path", Status.FAIL,
-                f"protected files modified: {', '.join(sorted(touched))}",
+                f"protected files modified: {', '.join(unique_touched)}",
                 hint="Revert these changes — protected files are outside the task's "
                      "blast radius by contract.",
+                path=(
+                    unique_touched[0]
+                    if len(unique_touched) == 1 and " -> " not in unique_touched[0]
+                    else None
+                ),
             )
         ]
     return [Evidence("protected", Status.PASS, "no protected files touched")]

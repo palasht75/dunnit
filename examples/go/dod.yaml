@@ -1,0 +1,24 @@
+# Evidence expected by the auto preset: a go.mod file in this workspace.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["go", "test", "./..."]
+    timeout: 600
+    writes: []
+  - name: vet
+    argv: ["go", "vet", "./..."]
+    timeout: 300
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - go.mod
+
+test_globs:
+  - "**/*_test.go"
+
+tamper: true
+stubs: true
+strict: false

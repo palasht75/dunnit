@@ -1,0 +1,40 @@
+# Example repository layout:
+#   services/api/pyproject.toml + tests/
+#   apps/web/package.json + package-lock.json + src/**/*.test.ts
+version: 2
+
+checks:
+  - name: api-tests
+    argv: ["python", "-m", "pytest", "-q"]
+    dir: services/api
+    timeout: 600
+    env: {CI: "1"}
+    writes: []
+  - name: web-tests
+    argv: ["npm", "run", "test", "--silent"]
+    dir: apps/web
+    timeout: 600
+    env: {CI: "1"}
+    writes: []
+  - name: web-lint
+    argv: ["npm", "run", "lint", "--silent"]
+    dir: apps/web
+    timeout: 300
+    env: {CI: "1"}
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - services/api/pytest.ini
+  - apps/web/vitest.config.*
+
+test_globs:
+  - services/api/tests/**
+  - "services/api/**/test_*.py"
+  - "apps/web/**/*.test.ts"
+  - "apps/web/**/*.spec.ts"
+
+tamper: true
+stubs: true
+strict: false

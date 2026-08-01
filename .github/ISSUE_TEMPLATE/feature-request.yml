@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused capability or detector with clear evidence.
+title: "proposal: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and users
+      description: What decision or integrity gap cannot the current contract express?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Concrete examples
+      description: Include an adversarial example and a nearby benign control when proposing a detector.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe interface, outcome/severity, failure mode, and portability expectations.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: The deterministic core can support this without a hosted service or required LLM.
+          required: true
+        - label: I have not described synthetic evidence as a real incident.
+          required: true

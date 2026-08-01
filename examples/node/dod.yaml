@@ -1,0 +1,34 @@
+# Evidence expected by the auto preset: package.json declares test and lint
+# scripts and the repository contains the matching package-manager lockfile.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["npm", "run", "test", "--silent"]
+    timeout: 600
+    env: {CI: "1"}
+    writes: []
+  - name: lint
+    argv: ["npm", "run", "lint", "--silent"]
+    timeout: 300
+    env: {CI: "1"}
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - jest.config.*
+  - vitest.config.*
+
+test_globs:
+  - test/**
+  - tests/**
+  - __tests__/**
+  - "**/*.test.js"
+  - "**/*.test.ts"
+  - "**/*.spec.js"
+  - "**/*.spec.ts"
+
+tamper: true
+stubs: true
+strict: false

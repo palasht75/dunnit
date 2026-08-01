@@ -1,16 +1,230 @@
 name: ci
-on: [push, pull_request]
+
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  portability:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out the repository with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e .[dev]
-      - run: ruff check src tests
-      - run: pytest -q
+
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev]"
+
+      # The complete suite includes paths with spaces/Unicode, CRLF, shallow and
+      # unborn repositories, detached HEAD, linked worktrees, and monorepos.
+      - name: Run tests and repository-topology scenarios
+        run: python -m pytest -q
+
+  macos-arm-smoke:
+    name: macOS ARM64 / Python 3.14 smoke
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run smoke and topology tests
+        run: python -m pytest -q
+
+  quality:
+    name: lint, types, coverage, and candidate self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check src tests benchmarks/aggregate.py
+
+      - name: Type check
+        run: python -m mypy src benchmarks/aggregate.py
+
+      - name: Smoke-test benchmark aggregator CLI
+        run: python benchmarks/aggregate.py --help
+
+      - name: Test with branch coverage
+        run: >-
+          python -m pytest -q
+          --cov=dunnit
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml
+          --cov-fail-under=90
+
+      - name: Parse every materialized contract example
+        run: >-
+          python -c "from pathlib import Path;
+          from dunnit.contract import load_contract;
+          [load_contract(path) for path in Path('examples').rglob('dod.yaml')]"
+
+      - name: Parse documentation YAML and JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          import yaml
+
+          for root in (Path(".github"), Path("examples")):
+              for path in root.rglob("*.yml"):
+                  yaml.safe_load(path.read_text(encoding="utf-8"))
+          for root in (Path("benchmarks"), Path("src/dunnit")):
+              for path in root.rglob("*.json"):
+                  json.loads(path.read_text(encoding="utf-8"))
+          PY
+
+      - name: Validate static and generated GitHub workflows
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_LINUX_AMD64_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "${ACTIONLINT_LINUX_AMD64_SHA256}  ${archive}" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+
+          dunnit snippet github --mode required > "$RUNNER_TEMP/generated-required.yml"
+          dunnit snippet github --mode shadow > "$RUNNER_TEMP/generated-shadow.yml"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          readme = Path("README.md").read_text(encoding="utf-8")
+          section = readme.split("## Five-minute GitHub required check", 1)[1]
+          workflow = section.split("```yaml\n", 1)[1].split("\n```", 1)[0]
+          Path(os.environ["RUNNER_TEMP"], "readme-required.yml").write_text(
+              workflow + "\n", encoding="utf-8"
+          )
+          PY
+
+          "$RUNNER_TEMP/actionlint" \
+            .github/workflows/*.yml \
+            examples/github/*.yml \
+            "$RUNNER_TEMP/generated-required.yml" \
+            "$RUNNER_TEMP/generated-shadow.yml" \
+            "$RUNNER_TEMP/readme-required.yml"
+
+      # This exercises the candidate implementation after candidate setup. It
+      # is a functional self-test, not the independent required-check boundary
+      # documented for downstream teams (which uses a published pinned Dunnit).
+      - name: Exercise candidate Dunnit against the pull-request base policy
+        if: github.event_name == 'pull_request'
+        env:
+          DUNNIT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          dunnit verify --ci
+          --policy-ref "$DUNNIT_BASE_SHA"
+          --base "$DUNNIT_BASE_SHA"
+          --format github
+
+      - name: Verify Dunnit on the checked-out push
+        if: github.event_name != 'pull_request'
+        run: dunnit verify --format github
+
+      - name: Retain coverage data
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  package:
+    name: build and clean-install distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install build tools
+        run: python -m pip install -e ".[dev]"
+
+      - name: Build wheel and source distribution
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: python -m twine check dist/*
+
+      - name: Install and smoke-test the wheel
+        run: |
+          python -m venv .smoke-wheel
+          .smoke-wheel/bin/python -m pip install dist/*.whl
+          .smoke-wheel/bin/dunnit --version
+          .smoke-wheel/bin/dunnit --help
+          .smoke-wheel/bin/python -c "from importlib.resources import files; assert (files('dunnit') / 'dod-v2.schema.json').is_file()"
+
+      - name: Install and smoke-test the source distribution
+        run: |
+          python -m venv .smoke-sdist
+          .smoke-sdist/bin/python -m pip install dist/*.tar.gz
+          .smoke-sdist/bin/dunnit --version
+          .smoke-sdist/bin/dunnit doctor --help
+
+      - name: Retain distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

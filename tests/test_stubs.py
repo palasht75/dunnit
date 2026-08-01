@@ -61,4 +61,5 @@ def test_marker_inside_string_not_flagged(repo):
 def test_untracked_file_with_stub_caught(repo):
     (repo / "new_module.py").write_text("def helper():\n    raise NotImplementedError\n")
     ev = check_stubs(collect_diff(repo, None), DEFAULT_TEST_GLOBS)
-    assert any(e.check == "stubs:not-implemented" for e in warns(ev))
+    finding = next(e for e in warns(ev) if e.check == "stubs:not-implemented")
+    assert finding.path == "new_module.py"

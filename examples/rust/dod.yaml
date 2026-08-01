@@ -1,0 +1,25 @@
+# Evidence expected by the auto preset: a Cargo.toml file in this workspace.
+version: 2
+
+checks:
+  - name: tests
+    argv: ["cargo", "test", "--quiet"]
+    timeout: 600
+    writes: []
+  - name: clippy
+    argv: ["cargo", "clippy", "--all-targets", "--", "-D", "warnings"]
+    timeout: 600
+    writes: []
+
+protected:
+  - dod.yaml
+  - .github/**
+  - Cargo.toml
+
+test_globs:
+  - tests/**
+  - "**/tests/**"
+
+tamper: true
+stubs: true
+strict: false

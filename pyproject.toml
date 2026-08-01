@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "dunnit"
-version = "0.3.0"
-description = "Did the agent actually do it? Tamper-evident verification of AI agent work: definition-of-done as code."
+dynamic = ["version"]
+description = "Offline, deterministic contract verification and Git-diff integrity checks."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -15,6 +15,12 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
     "Typing :: Typed",
@@ -22,7 +28,17 @@ classifiers = [
 dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff"]
+dev = [
+    "build>=1.2",
+    "hatchling>=1.27",
+    "jsonschema>=4.18",
+    "mypy>=1.10,<2",
+    "pytest>=7.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.9",
+    "twine>=5.0",
+    "types-PyYAML>=6.0",
+]
 
 [project.scripts]
 dunnit = "dunnit.cli:main"
@@ -35,8 +51,58 @@ Changelog = "https://github.com/palasht75/dunnit/blob/main/CHANGELOG.md"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dunnit"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/.github",
+    "/benchmarks",
+    "/docs",
+    "/examples",
+    "/src",
+    "/tests",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/README.md",
+    "/SECURITY.md",
+    "/dod.yaml",
+    "/pyproject.toml",
+]
+exclude = [
+    "/.claude",
+    "/.coverage",
+    "/.git",
+    "/.mypy_cache",
+    "/.pytest_cache",
+    "/.ruff_cache",
+    "/.venv",
+    "/build",
+    "/coverage.xml",
+    "/dist",
+    "/htmlcov",
+    "/venv",
+    "**/__pycache__",
+    "**/*.pyc",
+]
+
+[tool.hatch.version]
+path = "src/dunnit/__init__.py"
+
 [tool.ruff]
 line-length = 100
 
 [tool.ruff.lint]
 ignore = ["EXE002"]  # workspace mount forces the executable bit
+
+[tool.coverage.run]
+branch = true
+source = ["dunnit"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.mypy]
+python_version = "3.9"
+packages = ["dunnit"]
+strict = true
+warn_unused_ignores = true
