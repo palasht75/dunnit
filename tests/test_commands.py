@@ -374,6 +374,98 @@ def test_windows_process_tree_termination_still_targets_descendants_after_root_e
     process.terminate.assert_not_called()
 
 
+class _FakeKernelFunction:
+    def __init__(self, name, log, result=1):
+        self.name = name
+        self.log = log
+        self.result = result
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, *args):
+        self.log.append((self.name, args))
+        return self.result
+
+
+def _fake_ctypes(log, *, create_result=42, assign_result=1):
+    api = SimpleNamespace(
+        CreateJobObjectW=_FakeKernelFunction("create", log, result=create_result),
+        AssignProcessToJobObject=_FakeKernelFunction("assign", log, result=assign_result),
+        TerminateJobObject=_FakeKernelFunction("terminate", log),
+        CloseHandle=_FakeKernelFunction("close", log),
+    )
+    return SimpleNamespace(
+        WinDLL=lambda *_args, **_kwargs: api,
+        c_void_p="void*",
+        c_wchar_p="wchar*",
+        c_uint="uint",
+    )
+
+
+def test_windows_job_capture_terminates_and_closes_the_captured_tree(monkeypatch):
+    log = []
+    monkeypatch.setattr(commands, "ctypes", _fake_ctypes(log))
+    monkeypatch.setattr(commands, "os", SimpleNamespace(name="nt"))
+
+    job = commands._capture_process_tree(SimpleNamespace(_handle=7))
+
+    assert job is not None
+    job.terminate()
+    job.close()
+    assert ("create", (None, None)) in log
+    assert ("assign", (42, 7)) in log
+    assert ("terminate", (42, 1)) in log
+    assert ("close", (42,)) in log
+
+
+def test_windows_job_capture_degrades_to_none_on_every_failure(monkeypatch):
+    posix = SimpleNamespace(name="posix")
+    monkeypatch.setattr(commands, "os", posix)
+    assert commands._capture_process_tree(SimpleNamespace(_handle=7)) is None
+
+    monkeypatch.setattr(commands, "os", SimpleNamespace(name="nt"))
+    assert commands._capture_process_tree(SimpleNamespace()) is None
+    assert commands._capture_process_tree(SimpleNamespace(_handle=object())) is None
+
+    log = []
+    monkeypatch.setattr(commands, "ctypes", _fake_ctypes(log, create_result=0))
+    assert commands._capture_process_tree(SimpleNamespace(_handle=7)) is None
+
+    log = []
+    monkeypatch.setattr(commands, "ctypes", _fake_ctypes(log, assign_result=0))
+    assert commands._capture_process_tree(SimpleNamespace(_handle=7)) is None
+    assert ("close", (42,)) in log
+
+
+def test_run_command_closes_a_captured_job_after_completion(monkeypatch, tmp_path):
+    job = Mock()
+    monkeypatch.setattr(commands, "_capture_process_tree", Mock(return_value=job))
+
+    evidence = run_command(
+        CommandCheck("proof", argv=[sys.executable, "-c", "raise SystemExit(0)"]),
+        tmp_path,
+    )
+
+    assert evidence.status is Status.PASS
+    job.close.assert_called_once_with()
+    job.terminate.assert_not_called()
+
+
+def test_command_tree_termination_prefers_the_captured_job(monkeypatch):
+    fallback = Mock()
+    monkeypatch.setattr(commands, "_terminate_process_tree", fallback)
+
+    process = Mock()
+    job = Mock()
+    commands._terminate_command_tree(process, job)
+    job.terminate.assert_called_once_with()
+    fallback.assert_called_once_with(process)
+
+    fallback.reset_mock()
+    commands._terminate_command_tree(process, None)
+    fallback.assert_called_once_with(process)
+
+
 def test_windows_argv_resolves_pathext_command_shims(monkeypatch):
     monkeypatch.setattr(commands.shutil, "which", lambda executable, path: "C:/tools/npm.CMD")
 

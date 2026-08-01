@@ -14,10 +14,12 @@ from dunnit.verdict import Evidence, Outcome, Status, Verdict
 
 
 def _policy(*, checks=None, protected=None, tamper=False, stubs=False, strict=False, require=None):
+    # The default protects a path beyond the contract itself: a policy whose
+    # only rule re-protects its own trust root is rejected as a no-op.
     data = {
         "version": 2,
         "checks": checks or [],
-        "protected": ["dod.yaml"] if protected is None else protected,
+        "protected": ["dod.yaml", ".github/**"] if protected is None else protected,
         "tamper": tamper,
         "stubs": stubs,
         "strict": strict,

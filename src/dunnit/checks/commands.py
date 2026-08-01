@@ -7,6 +7,7 @@ legacy ``run`` strings retain their documented platform-native shell behavior.
 
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import shlex
@@ -232,6 +233,62 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
+class _WindowsJob:
+    """A job object binding the command's process tree on Windows.
+
+    Descendants inherit job membership when they are created, so terminating
+    the job also reaps grandchildren that outlive the command root — the case
+    ``taskkill /T`` cannot handle because the tree's root PID is already gone.
+    """
+
+    def __init__(self, process_handle: int) -> None:
+        # typeshed only exposes WinDLL when type-checking for win32, so load
+        # it dynamically (the same idiom as os.killpg above).
+        api = vars(ctypes)["WinDLL"]("kernel32", use_last_error=True)
+        pointer = ctypes.c_void_p
+        api.CreateJobObjectW.restype = pointer
+        api.CreateJobObjectW.argtypes = [pointer, ctypes.c_wchar_p]
+        api.AssignProcessToJobObject.argtypes = [pointer, pointer]
+        api.TerminateJobObject.argtypes = [pointer, ctypes.c_uint]
+        api.CloseHandle.argtypes = [pointer]
+        job = api.CreateJobObjectW(None, None)
+        if not job:
+            raise OSError("could not create a job object for the command tree")
+        if not api.AssignProcessToJobObject(job, process_handle):
+            api.CloseHandle(job)
+            raise OSError("could not assign the command to a job object")
+        self._api = api
+        self._job = job
+
+    def terminate(self) -> None:
+        self._api.TerminateJobObject(self._job, 1)
+
+    def close(self) -> None:
+        self._api.CloseHandle(self._job)
+
+
+def _capture_process_tree(process: subprocess.Popen[bytes]) -> _WindowsJob | None:
+    """Best-effort job capture so orphaned descendants remain terminable."""
+
+    if os.name != "nt":
+        return None
+    handle = getattr(process, "_handle", None)
+    if handle is None:
+        return None
+    try:
+        return _WindowsJob(int(handle))
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _terminate_command_tree(process: subprocess.Popen[bytes], job: _WindowsJob | None) -> None:
+    """Terminate via the captured job first, then the per-platform fallback."""
+
+    if job is not None:
+        job.terminate()
+    _terminate_process_tree(process)
+
+
 def _invalid_check(check: CommandCheck) -> str | None:
     if (check.run is None) == (check.argv is None):
         return "must define exactly one of 'run' or 'argv'"
@@ -360,6 +417,9 @@ def run_command(check: CommandCheck, cwd: Path) -> Evidence:
             scan_complete=False,
         )
 
+    # Capture the tree immediately so termination can reap descendants that
+    # outlive the root process.
+    job = _capture_process_tree(process)
     tail = _TailBuffer(_OUTPUT_BYTES)
     assert process.stdout is not None  # PIPE above guarantees this
     reader = threading.Thread(target=_drain_output, args=(process.stdout, tail), daemon=True)
@@ -370,16 +430,16 @@ def run_command(check: CommandCheck, cwd: Path) -> Evidence:
         process.wait(timeout=check.timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
-        _terminate_process_tree(process)
+        _terminate_command_tree(process, job)
     except (OSError, subprocess.SubprocessError) as exc:
         execution_error = _sanitize(str(exc))
-        _terminate_process_tree(process)
+        _terminate_command_tree(process, job)
 
     reader.join(timeout=_PIPE_DRAIN_GRACE)
     output_incomplete = reader.is_alive()
     if output_incomplete:
         if not timed_out:
-            _terminate_process_tree(process)
+            _terminate_command_tree(process, job)
         try:
             process.stdout.close()
         except (OSError, ValueError):
@@ -390,6 +450,8 @@ def run_command(check: CommandCheck, cwd: Path) -> Evidence:
             process.stdout.close()
         except (OSError, ValueError):
             pass
+    if job is not None:
+        job.close()
     duration = time.monotonic() - start
     output = _sanitize(tail.bytes())
 
