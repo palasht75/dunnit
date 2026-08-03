@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0a1 - 2026-08-01
+## 1.0.0a1 - 2026-08-03
 
 Trust-root hardening alpha. This prerelease is for corpus validation and
 external pilots; stable 1.0.0 remains gated on five independent repositories.
@@ -19,6 +19,13 @@ external pilots; stable 1.0.0 remains gated on five independent repositories.
 - Enforce exact SHA-1/SHA-256 object-ID widths, resolve Windows `PATHEXT`
   command shims, attempt descendant cleanup even after a command root exits,
   and materialize every detector-evidence manifest and lockfile as protected.
+- Bind proof commands to a Windows job object so descendants that outlive the
+  command root are still terminated, and decide `doctor` executable
+  availability by `PATHEXT` membership rather than the meaningless Windows
+  `os.access` execute bit, which disagreed across Python 3.9-3.14.
+- Normalize Windows symlink targets out of the extended-length `\\?\` device
+  namespace so link evidence and computed object IDs match what Git and other
+  platforms record for the same link.
 
 ## 0.3.0 - 2026-07-28
 
