@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from dunnit.contract import CommandCheck, Contract, ContractError
@@ -20,6 +21,9 @@ from dunnit.runner import (
     _populate_meta,
 )
 from dunnit.verdict import Evidence, Status, Verdict
+
+# Used when a command environment does not carry PATHEXT of its own.
+_WINDOWS_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 
 
 def doctor(
@@ -264,6 +268,29 @@ def _repository_paths(root: Path) -> list[str]:
     return list(dict.fromkeys(os.fsdecode(value) for value in result.stdout.split(b"\0") if value))
 
 
+def _is_executable_file(path: Path, env: Mapping[str, str]) -> bool:
+    """Report whether an explicit path can actually be executed on this host.
+
+    Windows has no execute permission bit: ``os.access(..., os.X_OK)`` is true
+    for every readable file, and the interpreter's own explicit-path answer
+    changed across supported Python versions. Membership in PATHEXT is what
+    decides runnability there, so resolve it directly and identically on 3.9
+    through 3.14.
+    """
+
+    if not path.is_file():
+        return False
+    if os.name != "nt":
+        return os.access(path, os.X_OK)
+    pathext = env.get("PATHEXT") or _WINDOWS_DEFAULT_PATHEXT
+    name = path.name.casefold()
+    return any(
+        name.endswith(suffix.strip().casefold())
+        for suffix in pathext.split(";")
+        if suffix.strip()
+    )
+
+
 def _check_command(verdict: Verdict, root: Path, check: CommandCheck) -> None:
     where = (root / check.dir).resolve() if check.dir else root.resolve()
     try:
@@ -310,15 +337,14 @@ def _check_command(verdict: Verdict, root: Path, check: CommandCheck) -> None:
 
     executable = check.argv[0]
     command_env = {**os.environ, **check.env}
-    resolved = shutil.which(executable, path=command_env.get("PATH"))
     if "/" in executable or "\\" in executable:
+        # An explicit path names a file in this repository, so resolve it
+        # against the check's own directory rather than PATH or the verifier's
+        # working directory.
         explicit = (where / executable).resolve()
-        windows_explicit = (
-            shutil.which(str(explicit), path=command_env.get("PATH")) if os.name == "nt" else None
-        )
-        executable_file = windows_explicit is not None if os.name == "nt" else os.access(explicit, os.X_OK)
-        if explicit.is_file() and executable_file:
-            resolved = str(explicit)
+        resolved = str(explicit) if _is_executable_file(explicit, command_env) else None
+    else:
+        resolved = shutil.which(executable, path=command_env.get("PATH"))
     if resolved:
         verdict.add(
             Evidence(

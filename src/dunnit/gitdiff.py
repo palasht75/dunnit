@@ -36,6 +36,9 @@ MAX_SCANNED_LINES = 100_000
 # metadata before verification can fail closed.
 MAX_GIT_METADATA_BYTES = 16 * 1024 * 1024
 _FULL_OBJECT_ID = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
+# Windows reparse targets are reported in the extended-length device namespace.
+_WINDOWS_DEVICE_PREFIX = "\\\\?\\"
+_WINDOWS_UNC_DEVICE_PREFIX = "\\\\?\\UNC\\"
 
 
 def _is_full_object_id(value: str) -> bool:
@@ -583,6 +586,25 @@ def _head_ref(root: Path) -> str | None:
     return value
 
 
+def _read_symlink_target(path: Path) -> str:
+    """Read a link target without following it, normalized across platforms.
+
+    Windows returns reparse targets in the extended-length ``\\\\?\\`` device
+    namespace, which addresses the same file as the plain path Git records in
+    a symlink blob. Strip that prefix so evidence and computed object IDs stay
+    identical to what Git and other platforms report for the same link.
+    """
+
+    target = os.readlink(path)
+    if os.name != "nt":
+        return target
+    if target.startswith(_WINDOWS_UNC_DEVICE_PREFIX):
+        return "\\\\" + target[len(_WINDOWS_UNC_DEVICE_PREFIX) :]
+    if target.startswith(_WINDOWS_DEVICE_PREFIX):
+        return target[len(_WINDOWS_DEVICE_PREFIX) :]
+    return target
+
+
 def _path_digest(path: Path) -> str:
     """Hash metadata without following a replacement symlink."""
 
@@ -597,7 +619,7 @@ def _path_digest(path: Path) -> str:
     digest.update(b"\0")
     if stat.S_ISLNK(info.st_mode):
         try:
-            digest.update(os.fsencode(os.readlink(path)))
+            digest.update(os.fsencode(_read_symlink_target(path)))
         except OSError as exc:
             raise GitDiffError(
                 "git_metadata_failed", f"cannot read Git metadata symlink {path}: {exc}"
@@ -1189,7 +1211,7 @@ def _worktree_identity(root: Path, entry: _IndexEntry) -> _WorktreeIdentity:
 
     if stat.S_ISLNK(info.st_mode):
         try:
-            target = os.fsencode(os.readlink(candidate))
+            target = os.fsencode(_read_symlink_target(candidate))
         except OSError as exc:
             return _WorktreeIdentity("symlink", mode="120000", reason=str(exc))
         digest = _object_hasher(len(entry.object_id), len(target))
@@ -1248,7 +1270,7 @@ def _worktree_content(root: Path, path: str) -> _Content:
 
     if stat.S_ISLNK(info.st_mode):
         try:
-            target = os.readlink(candidate)
+            target = _read_symlink_target(candidate)
         except OSError as exc:
             return _Content(None, info.st_size, f"cannot read symlink: {exc}", symlink=True)
         return _Content(os.fsencode(target), info.st_size, symlink=True)

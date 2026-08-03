@@ -375,6 +375,33 @@ def test_command_checker_handles_escape_and_explicit_executable(repo):
     assert _evidence(unavailable, "doctor.command-available").status is Status.FAIL
 
 
+def test_explicit_executable_runnability_follows_each_platform_rule(repo, monkeypatch):
+    tools = repo / "tools"
+    tools.mkdir()
+    shim = tools / "proof-tool.cmd"
+    shim.write_text("@exit /b 0\n", encoding="utf-8")
+    data = tools / "proof-data.txt"
+    data.write_text("not executable\n", encoding="utf-8")
+
+    # Windows has no execute bit, so PATHEXT decides — identically on every
+    # supported Python version, unlike shutil.which/os.access.
+    monkeypatch.setattr(doctor_module, "os", SimpleNamespace(name="nt"))
+    windows_env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"}
+    assert doctor_module._is_executable_file(shim, windows_env) is True
+    assert doctor_module._is_executable_file(data, windows_env) is False
+    assert doctor_module._is_executable_file(shim, {}) is True
+    assert doctor_module._is_executable_file(tools / "absent.cmd", {}) is False
+    assert doctor_module._is_executable_file(tools, windows_env) is False
+
+    monkeypatch.setattr(
+        doctor_module,
+        "os",
+        SimpleNamespace(name="posix", X_OK=os.X_OK, access=lambda path, mode: path == shim),
+    )
+    assert doctor_module._is_executable_file(shim, {}) is True
+    assert doctor_module._is_executable_file(data, {}) is False
+
+
 def test_policy_that_only_repeats_its_trust_root_is_not_meaningful(repo):
     _commit_policy(
         repo,

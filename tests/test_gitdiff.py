@@ -714,6 +714,38 @@ def test_symlink_content_is_not_followed_outside_repository(repo, tmp_path):
     assert diff.added_lines == [str(outside)]
 
 
+def test_windows_symlink_targets_leave_the_device_namespace(monkeypatch):
+    # Windows reports reparse targets as \\?\C:\..., so the same link would
+    # otherwise produce different evidence than POSIX and than Git's own blob.
+    links = {
+        "local": "\\\\?\\C:\\repo\\outside-secret.txt",
+        "unc": "\\\\?\\UNC\\server\\share\\outside-secret.txt",
+        "plain": "C:\\repo\\outside-secret.txt",
+        "relative": "..\\outside-secret.txt",
+    }
+    monkeypatch.setattr(
+        gitdiff_module,
+        "os",
+        SimpleNamespace(name="nt", readlink=links.__getitem__),
+    )
+
+    assert gitdiff_module._read_symlink_target("local") == "C:\\repo\\outside-secret.txt"
+    assert (
+        gitdiff_module._read_symlink_target("unc")
+        == "\\\\server\\share\\outside-secret.txt"
+    )
+    assert gitdiff_module._read_symlink_target("plain") == "C:\\repo\\outside-secret.txt"
+    assert gitdiff_module._read_symlink_target("relative") == "..\\outside-secret.txt"
+
+    # A POSIX filename may legitimately contain those characters verbatim.
+    monkeypatch.setattr(
+        gitdiff_module,
+        "os",
+        SimpleNamespace(name="posix", readlink=links.__getitem__),
+    )
+    assert gitdiff_module._read_symlink_target("local") == links["local"]
+
+
 def test_shallow_clone_with_missing_base_has_actionable_error(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
