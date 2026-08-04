@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+Benchmark execution harness. No benchmark result is published and every
+quality gate remains unverified; the labeled corpus is deliberately left to
+independent authors and a second adjudicator.
+
+- Expose the protocol's scanner-only instrumentation point as `meta`
+  `scanner_duration`, measured from Git discovery through integrity-rule
+  evaluation and excluding declared proof-command runtime, plus `meta`
+  `inspectable_bytes` as the paired workload measure.
+- Add `benchmarks/run.py`, which materializes each fixture into a fresh
+  disposable repository, refuses fixtures whose digest no longer matches the
+  frozen manifest, refuses topologies it cannot construct deterministically,
+  and reads only execution fields so labels never reach the runner.
+- Add `benchmarks/make_dev_sample.py`, a deterministic three-case harness
+  sample that is not the corpus and whose gates stay `not_evaluated`.
+
 ## 1.0.0a1 - 2026-08-03
 
 Trust-root hardening alpha. This prerelease is for corpus validation and

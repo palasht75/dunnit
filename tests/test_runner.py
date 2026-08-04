@@ -806,3 +806,77 @@ def test_incomplete_path_enumeration_has_explicit_error(repo):
 )
 def test_git_error_hints_are_actionable(code, phrase):
     assert phrase in runner_module._git_hint(code)
+
+
+def test_scanner_clock_excludes_paused_intervals():
+    clock = runner_module._ScannerClock()
+    assert clock.seconds == 0.0
+
+    clock.start()
+    first = clock.seconds
+    assert first > 0.0
+    clock.pause()
+    paused = clock.seconds
+    # A paused clock does not advance, so proof-command runtime is excluded.
+    assert clock.seconds == paused >= first
+    # Repeated start/pause is safe and keeps accumulating.
+    clock.start()
+    clock.start()
+    clock.pause()
+    clock.pause()
+    assert clock.seconds >= paused
+
+
+def test_scanner_duration_excludes_proof_command_runtime(repo):
+    _commit(
+        repo,
+        _body(
+            checks=[
+                {
+                    "name": "slow",
+                    "argv": [sys.executable, "-c", "import time; time.sleep(1.0)"],
+                    "writes": [],
+                }
+            ],
+            protected=["dod.yaml"],
+        ),
+    )
+
+    verdict = verify(repo / "dod.yaml", cwd=repo)
+
+    assert verdict.passed
+    # The command sleeps a full second; scanner-only time must not include it.
+    assert verdict.meta["duration"] >= 1.0
+    assert verdict.meta["scanner_duration"] > 0.0
+    assert verdict.meta["scanner_duration"] < verdict.meta["duration"] - 0.5
+
+
+def test_scanner_metadata_reports_inspectable_bytes(repo):
+    _commit(repo, _body(protected=["dod.yaml"]))
+    (repo / "app.py").write_text("x = 1\n" * 100, encoding="utf-8")
+
+    verdict = verify(repo / "dod.yaml", cwd=repo)
+
+    assert verdict.meta["inspectable_bytes"] > 0
+    assert verdict.meta["files_changed"] >= 1
+    assert verdict.meta["scanner_duration"] > 0.0
+
+
+def test_inspectable_bytes_counts_only_inspected_content(repo):
+    (repo / "app.py").write_text("x = 1\n" * 50, encoding="utf-8")
+    (repo / "extra.py").write_text("y = 2\n", encoding="utf-8")
+    snapshot = collect_diff_snapshot(repo, None)
+    assert snapshot.files
+
+    baseline = snapshot.inspectable_bytes
+    assert baseline > 0
+    assert baseline == sum(
+        (item.old_size or 0) + (item.new_size or 0)
+        for item in snapshot.files
+        if item.content_scanned
+    )
+
+    # Path-only transitions (binary or oversized) are not inspectable workload.
+    for item in snapshot.files:
+        item.content_scanned = False
+    assert snapshot.inspectable_bytes == 0

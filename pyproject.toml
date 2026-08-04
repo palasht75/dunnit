@@ -89,9 +89,17 @@ path = "src/dunnit/__init__.py"
 
 [tool.ruff]
 line-length = 100
+# Benchmark fixtures are corpus data, not source. Their contents are
+# deliberately tampered or stubbed, so linting them is meaningless.
+extend-exclude = ["benchmarks/fixtures", "benchmarks/dev-sample/fixtures"]
 
 [tool.ruff.lint]
 ignore = ["EXE002"]  # workspace mount forces the executable bit
+
+[tool.pytest.ini_options]
+# Benchmark fixtures contain deliberately broken test files that exist to be
+# scanned, never executed. Collection stays inside the real suite.
+testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true

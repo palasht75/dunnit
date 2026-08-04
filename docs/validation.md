@@ -7,11 +7,12 @@ check or that it caught failures their normal CI missed.
 
 ## Current status
 
-As of 2026-08-01:
+As of 2026-08-04:
 
 | Evidence | Status |
 |---|---|
 | Benchmark protocol published before results | Specified in [`benchmarks/PROTOCOL.md`](../benchmarks/PROTOCOL.md) |
+| Benchmark execution harness | Implemented: blind runner, aggregator, and a scanner-only instrumentation point |
 | Labeled benchmark corpus | Not yet published |
 | Five qualifying independent repositories | Not yet established publicly |
 | Eight-week/100-PR shadow observation | Not complete |

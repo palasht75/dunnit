@@ -10,3 +10,7 @@ venv/
 .coverage
 coverage.xml
 htmlcov/
+# Regenerate with `python benchmarks/make_dev_sample.py`. This sample is
+# harness scaffolding, not benchmark evidence, so it is never committed where
+# it could be mistaken for a published result.
+benchmarks/dev-sample/

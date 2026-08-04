@@ -167,6 +167,22 @@ class DiffSnapshot:
 
         return len(self.files)
 
+    @property
+    def inspectable_bytes(self) -> int:
+        """Total content bytes on both sides of every inspected transition.
+
+        This is the scanner's workload measure, so it counts only transitions
+        whose content was actually inspected. Path-only transitions (binary,
+        oversized, or otherwise unreadable content) contribute nothing, which
+        keeps latency comparable against the bytes the rules really examined.
+        """
+
+        return sum(
+            (item.old_size or 0) + (item.new_size or 0)
+            for item in self.files
+            if item.content_scanned
+        )
+
 
 @dataclass(frozen=True)
 class _Content:

@@ -60,6 +60,7 @@ def verify(
     """
 
     started = time.monotonic()
+    scanner = _ScannerClock()
     verdict = Verdict()
     materialized: Contract | None = None
     effective_strict = bool(strict)
@@ -71,6 +72,7 @@ def verify(
             raise ContractError("CI mode rejects bootstrap policy")
 
         invocation_dir = Path(cwd or Path.cwd())
+        scanner.start()
         repository = discover_repository(invocation_dir)
         root = repository.root
 
@@ -167,7 +169,12 @@ def verify(
         if initial.scan_complete:
             for check in materialized.checks:
                 before_tokens = _snapshot_tokens(root, current)
-                command_evidence = run_command(check, root)
+                # The repository's own proof command is not scanner work.
+                scanner.pause()
+                try:
+                    command_evidence = run_command(check, root)
+                finally:
+                    scanner.start()
                 _finish_evidence(command_evidence)
                 verdict.add(command_evidence)
 
@@ -279,9 +286,41 @@ def verify(
             _finish_evidence(item)
         verdict.meta.setdefault("mode", mode)
         verdict.meta["duration"] = round(time.monotonic() - started, 6)
+        verdict.meta["scanner_duration"] = round(scanner.seconds, 6)
         if materialized is not None:
             verdict.meta.setdefault("contract_version", materialized.version)
     return verdict
+
+
+class _ScannerClock:
+    """Accumulate scanner-only elapsed time.
+
+    The benchmark protocol measures from immediately before Git discovery and
+    diff collection through the end of integrity-rule evaluation, excluding
+    declared proof-command runtime. Report file I/O happens after ``verify``
+    returns and is therefore never counted. This is the single public
+    instrumentation point every benchmark case must use.
+    """
+
+    def __init__(self) -> None:
+        self._total = 0.0
+        self._started: float | None = None
+
+    def start(self) -> None:
+        if self._started is None:
+            self._started = time.monotonic()
+
+    def pause(self) -> None:
+        if self._started is not None:
+            self._total += time.monotonic() - self._started
+            self._started = None
+
+    @property
+    def seconds(self) -> float:
+        total = self._total
+        if self._started is not None:
+            total += time.monotonic() - self._started
+        return total
 
 
 def _policy_path(contract: Contract | str | Path, root: Path) -> tuple[Path, str]:
@@ -477,6 +516,9 @@ def _populate_meta(
             "base": state.requested_ref or "HEAD",
             "files_changed": snapshot.path_count,
             "diff_transitions": snapshot.transition_count,
+            # Candidate-scan workload, paired with files_changed so benchmark
+            # latency can be grouped by both size measures.
+            "inspectable_bytes": snapshot.inspectable_bytes,
             "policy": {
                 "origin": policy_origin,
                 "path": policy_path,
