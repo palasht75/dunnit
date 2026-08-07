@@ -808,13 +808,15 @@ def test_git_error_hints_are_actionable(code, phrase):
     assert phrase in runner_module._git_hint(code)
 
 
-def test_scanner_clock_excludes_paused_intervals():
+def test_scanner_clock_excludes_paused_intervals(monkeypatch):
+    ticks = iter([10.0, 10.25, 10.5, 11.0, 11.75])
+    monkeypatch.setattr(runner_module.time, "monotonic", lambda: next(ticks))
     clock = runner_module._ScannerClock()
     assert clock.seconds == 0.0
 
     clock.start()
     first = clock.seconds
-    assert first > 0.0
+    assert first == 0.25
     clock.pause()
     paused = clock.seconds
     # A paused clock does not advance, so proof-command runtime is excluded.
@@ -824,7 +826,7 @@ def test_scanner_clock_excludes_paused_intervals():
     clock.start()
     clock.pause()
     clock.pause()
-    assert clock.seconds >= paused
+    assert clock.seconds == 1.25
 
 
 def test_scanner_duration_excludes_proof_command_runtime(repo):
