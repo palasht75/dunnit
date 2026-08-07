@@ -7,9 +7,9 @@
 [![Python](https://img.shields.io/pypi/pyversions/dunnit)](https://pypi.org/project/dunnit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/palasht75/dunnit/blob/main/LICENSE)
 
-> **Pre-release status:** `1.0.0a1` is the first trust-hardening release. The
+> **Pre-release status:** `1.0.0b1` is the portable feature-complete beta. The
 > external-validation program is specified, but its results have not been
-> published yet. Do not interpret the alpha label—or this README—as evidence
+> published yet. Do not interpret the beta label—or this README—as evidence
 > that five independent teams rely on Dunnit today.
 
 AI coding agents can produce a green test run after deleting a failing test,
@@ -44,8 +44,8 @@ for the evidence bar this project uses.
 From the repository root:
 
 ```bash
-# Once 1.0.0a1 is published; keep the version pinned in automation.
-python -m pip install "dunnit==1.0.0a1"
+# Keep the version pinned in automation.
+python -m pip install "dunnit==1.0.0b1"
 
 # Preview only evidence-backed toolchain detection, then materialize it.
 dunnit init --preset auto --dry-run
@@ -72,7 +72,7 @@ below as `.github/workflows/dunnit.yml`. The workflow intentionally installs
 only the exact Dunnit release before verification. Do not install or build the
 candidate project first: candidate-controlled build hooks could change the
 worktree before Dunnit's initial snapshot. The workflow is intended for the
-published `1.0.0a1` release; update the exact pin deliberately for later releases.
+published `1.0.0b1` release; update the exact pin deliberately for later releases.
 
 ```yaml
 name: dunnit
@@ -99,7 +99,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install pinned Dunnit
-        run: python -m pip install "dunnit==1.0.0a1"
+        run: python -m pip install "dunnit==1.0.0b1"
 
       - name: Verify the pull request
         env:

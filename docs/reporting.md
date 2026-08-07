@@ -21,7 +21,7 @@ The stable top-level shape is:
 {
   "schema_version": 1,
   "tool": "dunnit",
-  "version": "1.0.0a1",
+  "version": "1.0.0b1",
   "verdict": "pass",
   "outcome": "pass_with_warnings",
   "scan_complete": true,

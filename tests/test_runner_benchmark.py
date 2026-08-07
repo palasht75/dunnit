@@ -49,6 +49,16 @@ def _manifest(tmp_path, *records):
     return path
 
 
+def _fixture(tmp_path: Path, candidate_path: str, data: bytes = b"x = 2\n") -> Path:
+    fixture = tmp_path / "fixture"
+    (fixture / "base").mkdir(parents=True)
+    (fixture / "candidate" / Path(candidate_path).parent).mkdir(parents=True)
+    (fixture / "base" / "app.py").write_bytes(b"x = 1\n")
+    (fixture / "candidate" / candidate_path).write_bytes(data)
+    (fixture / "contract.yaml").write_bytes(b"version: 2\nchecks:\n  - name: ok\n    argv: [git, status]\n")
+    return fixture
+
+
 def test_execution_cases_never_carry_labels(tmp_path):
     cases = runner.load_execution_cases(_manifest(tmp_path, _record()))
 
@@ -119,13 +129,56 @@ def test_edited_fixture_is_refused_before_execution(tmp_path):
 
 
 def test_unsupported_topology_is_refused_rather_than_approximated(tmp_path):
-    fixture = tmp_path / "fixture"
-    (fixture / "base").mkdir(parents=True)
-    (fixture / "base" / "app.py").write_bytes(b"x = 1\n")
-    (fixture / "contract.yaml").write_bytes(b"version: 2\n")
+    fixture = _fixture(tmp_path, "app.py")
 
     with pytest.raises(runner.BenchmarkExecutionError, match="cannot construct topologies"):
-        runner.materialize(fixture, tmp_path / "workspace", ("shallow-missing-history",))
+        runner.materialize(fixture, tmp_path / "workspace", ("imaginary-topology",))
+
+
+@pytest.mark.parametrize(
+    ("topology", "candidate_path", "data"),
+    [
+        ("spaces", "dir with space/test.py", b"x = 2\n"),
+        ("unicode", "caf\u00e9/test.py", b"x = 2\n"),
+        *([("tabs", "tab\tname/test.py", b"x = 2\n")] if sys.platform != "win32" else []),
+        ("binary", "binary.bin", b"before\0after"),
+        ("oversized", "large.py", None),
+        ("monorepo", "packages/api/test.py", b"x = 2\n"),
+    ],
+)
+def test_declarative_topologies_are_proved_by_fixture_content(
+    tmp_path: Path, topology: str, candidate_path: str, data: bytes | None
+) -> None:
+    fixture = _fixture(tmp_path, candidate_path, b"x" * 1_000_001 if data is None else data)
+
+    runner.materialize(fixture, tmp_path / "workspace", (topology,))
+
+
+@pytest.mark.parametrize(
+    "topology",
+    ["unborn", "worktree", "shallow-sufficient", "shallow-missing-history"],
+)
+def test_repository_topologies_are_constructed(tmp_path: Path, topology: str) -> None:
+    fixture = _fixture(tmp_path, "app.py")
+
+    runner.materialize(fixture, tmp_path / "workspace", (topology,))
+
+
+def test_many_untracked_topology_requires_more_than_one_thousand_paths(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "untracked/0000.py")
+    for index in range(1, 1001):
+        (fixture / "candidate" / "untracked" / f"{index:04d}.py").write_text(
+            f"value = {index}\n", encoding="utf-8"
+        )
+
+    runner.materialize(fixture, tmp_path / "workspace", ("many-untracked",))
+
+
+def test_declared_topology_is_refused_when_fixture_does_not_prove_it(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, "app.py")
+
+    with pytest.raises(runner.BenchmarkExecutionError, match="does not prove"):
+        runner.materialize(fixture, tmp_path / "workspace", ("unicode",))
 
 
 def test_only_alert_findings_are_recorded_and_deduplicated():

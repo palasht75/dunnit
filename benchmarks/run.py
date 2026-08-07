@@ -49,8 +49,30 @@ EXECUTION_KEYS = frozenset(
 # refused loudly rather than executed as an approximation, so partial coverage
 # can never be published as if the declared topology had been exercised.
 SUPPORTED_TOPOLOGIES = frozenset(
-    {"normal", "committed", "staged", "unstaged", "untracked", "lf", "crlf", "detached-head"}
+    {
+        "normal",
+        "spaces",
+        "unicode",
+        "tabs",
+        "lf",
+        "crlf",
+        "binary",
+        "oversized",
+        "shallow-sufficient",
+        "shallow-missing-history",
+        "detached-head",
+        "unborn",
+        "worktree",
+        "monorepo",
+        "committed",
+        "staged",
+        "unstaged",
+        "untracked",
+        "many-untracked",
+    }
 )
+
+_MAX_SCANNED_BYTES = 1_000_000
 
 _ALERT_SEVERITIES = frozenset({"warning", "error"})
 
@@ -162,6 +184,21 @@ def _git(repository: Path, *args: str) -> None:
         )
 
 
+def _git_output(repository: Path, *args: str, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if check and result.returncode != 0:
+        raise BenchmarkExecutionError(
+            f"git {' '.join(args)} failed in {repository}: {result.stderr.strip()}"
+        )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def _copy_tree(source: Path, destination: Path, *, newline: bytes | None) -> list[str]:
     written: list[str] = []
     if not source.is_dir():
@@ -193,25 +230,40 @@ def materialize(fixture: Path, workspace: Path, topologies: tuple[str, ...]) -> 
         raise BenchmarkExecutionError(
             "this runner cannot construct topologies: " + ", ".join(sorted(unsupported))
         )
+    if "unborn" in topologies and ({"committed", "detached-head", "worktree"} & set(topologies)):
+        raise BenchmarkExecutionError("unborn cannot be combined with committed/detached/worktree")
+    shallow = {"shallow-sufficient", "shallow-missing-history"} & set(topologies)
+    if len(shallow) > 1 or (shallow and "unborn" in topologies):
+        raise BenchmarkExecutionError("declare exactly one compatible shallow topology")
+    if shallow and "worktree" in topologies:
+        raise BenchmarkExecutionError("shallow and worktree must be exercised by separate cases")
 
     newline = b"\r\n" if "crlf" in topologies else (b"\n" if "lf" in topologies else None)
-    workspace.mkdir(parents=True, exist_ok=True)
-    _git(workspace, "init", "-q")
-    _git(workspace, "config", "user.email", "benchmark@dunnit.invalid")
-    _git(workspace, "config", "user.name", "dunnit benchmark")
-    _git(workspace, "config", "commit.gpgsign", "false")
-    _git(workspace, "config", "core.autocrlf", "false")
+    base_repository = workspace.parent / "main-repository" if "worktree" in topologies else workspace
+    base_repository.mkdir(parents=True, exist_ok=True)
+    _git(base_repository, "init", "-q")
+    _git(base_repository, "config", "user.email", "benchmark@dunnit.invalid")
+    _git(base_repository, "config", "user.name", "dunnit benchmark")
+    _git(base_repository, "config", "commit.gpgsign", "false")
+    _git(base_repository, "config", "core.autocrlf", "false")
 
-    base = _copy_tree(fixture / "base", workspace, newline=newline)
+    base = _copy_tree(fixture / "base", base_repository, newline=newline)
     if not base:
         raise BenchmarkExecutionError(f"fixture {fixture} has no base/ snapshot")
     contract = fixture / "contract.yaml"
     if not contract.is_file():
         raise BenchmarkExecutionError(f"fixture {fixture} has no contract.yaml")
-    (workspace / "dod.yaml").write_bytes(contract.read_bytes())
-    _git(workspace, "add", "-A")
-    _git(workspace, "commit", "-qm", "benchmark base snapshot")
-    if "detached-head" in topologies:
+    (base_repository / "dod.yaml").write_bytes(contract.read_bytes())
+    if "unborn" not in topologies:
+        _git(base_repository, "add", "-A")
+        _git(base_repository, "commit", "-qm", "benchmark base snapshot")
+    if "worktree" in topologies:
+        _git(base_repository, "worktree", "add", "--detach", str(workspace), "HEAD")
+    if shallow:
+        head = _git_output(workspace, "rev-parse", "HEAD")
+        git_directory = Path(_git_output(workspace, "rev-parse", "--absolute-git-dir"))
+        (git_directory / "shallow").write_text(head + "\n", encoding="ascii")
+    if "detached-head" in topologies and "unborn" not in topologies:
         _git(workspace, "checkout", "-q", "--detach", "HEAD")
 
     deletions = fixture / "delete.txt"
@@ -240,6 +292,54 @@ def materialize(fixture: Path, workspace: Path, topologies: tuple[str, ...]) -> 
     # "unstaged", "untracked", and "normal" leave the worktree as written.
     if not candidate and not deletions.is_file():
         raise BenchmarkExecutionError(f"fixture {fixture} has no candidate mutation")
+    _validate_materialized_topologies(workspace, topologies)
+
+
+def _validate_materialized_topologies(workspace: Path, topologies: tuple[str, ...]) -> None:
+    """Prove that declarative fixture topology labels match the repository."""
+
+    files = [
+        path
+        for path in workspace.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(workspace).parts
+    ]
+    relative_paths = [path.relative_to(workspace).as_posix() for path in files]
+    requirements: dict[str, bool] = {
+        "spaces": any(" " in path for path in relative_paths),
+        "unicode": any(not path.isascii() for path in relative_paths),
+        "tabs": any("\t" in path for path in relative_paths),
+        "binary": any(b"\0" in path.read_bytes() for path in files),
+        "oversized": any(path.stat().st_size > _MAX_SCANNED_BYTES for path in files),
+        "monorepo": any(len(Path(path).parts) >= 3 for path in relative_paths),
+        "worktree": (workspace / ".git").is_file(),
+        "unborn": not bool(_git_output(workspace, "rev-parse", "--verify", "HEAD", check=False)),
+        "shallow-sufficient": _git_output(workspace, "rev-parse", "--is-shallow-repository")
+        == "true",
+        "shallow-missing-history": _git_output(
+            workspace, "rev-parse", "--is-shallow-repository"
+        )
+        == "true",
+    }
+    untracked = _git_output(
+        workspace, "ls-files", "--others", "--exclude-standard", "-z"
+    ).split("\0")
+    untracked_count = sum(bool(path) for path in untracked)
+    requirements.update(
+        {
+            "untracked": untracked_count >= 1,
+            "many-untracked": untracked_count > 1_000,
+            "staged": bool(_git_output(workspace, "diff", "--cached", "--name-only")),
+            "unstaged": bool(_git_output(workspace, "diff", "--name-only")),
+            "committed": not bool(_git_output(workspace, "status", "--porcelain")),
+            "detached-head": _git_output(workspace, "symbolic-ref", "-q", "HEAD", check=False)
+            == "",
+        }
+    )
+    for topology in topologies:
+        if topology in requirements and not requirements[topology]:
+            raise BenchmarkExecutionError(
+                f"fixture declares {topology!r} but the materialized repository does not prove it"
+            )
 
 
 def _findings(payload: dict[str, Any]) -> list[dict[str, Any]]:
