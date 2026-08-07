@@ -109,6 +109,14 @@ label. A second reviewer adjudicates it without seeing Dunnit's output.
 Disagreements are resolved before the manifest is frozen. After freeze, compute
 and publish a digest of the manifest and fixture archive.
 
+Use separate author-label and adjudication JSONL files and
+[`adjudicate.py`](adjudicate.py) for the final handoff. The finalizer requires a
+different author and adjudicator ID for every case, rejects execution-output
+fields, verifies fixture digests, and creates the canonical manifest and digest
+without overwriting an existing freeze. Study IDs may be pseudonymous; human
+independence still requires maintainer verification and cannot be inferred from
+different strings alone.
+
 The execution runner receives fixture and contract paths but not expected
 outcomes. It writes append-only raw results. Do not modify a fixture after its
 digest is published; corrections create a new protocol/corpus revision.

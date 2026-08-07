@@ -2,9 +2,14 @@
 
 ## Unreleased
 
-Benchmark execution harness. No benchmark result is published and every
-quality gate remains unverified; the labeled corpus is deliberately left to
-independent authors and a second adjudicator.
+No benchmark result is published and every external-evidence gate remains
+unverified; the labeled corpus is deliberately left to independent authors and
+a second adjudicator.
+
+## 1.0.0b1 - 2026-08-06
+
+Portable feature-complete beta. Stable 1.0.0 remains gated on the published
+benchmark and the independent repository pilot.
 
 - Expose the protocol's scanner-only instrumentation point as `meta`
   `scanner_duration`, measured from Git discovery through integrity-rule
@@ -16,6 +21,13 @@ independent authors and a second adjudicator.
   and reads only execution fields so labels never reach the runner.
 - Add `benchmarks/make_dev_sample.py`, a deterministic three-case harness
   sample that is not the corpus and whose gates stay `not_evaluated`.
+- Add an output-blind benchmark adjudication finalizer that requires distinct
+  author/reviewer IDs, verifies fixture digests, and freezes canonical JSONL.
+- Add a privacy-minimal pilot aggregator that validates phase windows, review
+  coverage, reliance duration, exact threshold counts, and the incident claim.
+- Keep Python 3.9 support while adopting current build, Hatchling, jsonschema,
+  Ruff, and PyYAML type-stub versions where their Python requirements permit;
+  MyPy remains below 2 so type checking continues to validate Python 3.9.
 
 ## 1.0.0a1 - 2026-08-03
 

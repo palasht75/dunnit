@@ -34,6 +34,6 @@ workflow definition ran. Dunnit can flag a workflow path only after a trusted
 workflow invokes it; it cannot defend a workflow disabled or replaced before
 invocation.
 
-The example pins the planned `1.0.0a1` package release. It is not an assertion
+The examples pin the `1.0.0b1` package release. This is not an assertion
 that the package has already been published. Update the pin only after reviewing
 the target release and its migration notes.

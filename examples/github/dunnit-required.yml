@@ -24,7 +24,7 @@ jobs:
       # Proof dependencies must come from a reviewed runner image/environment,
       # or from a setup check inside dod.yaml so Dunnit snapshots first.
       - name: Install pinned Dunnit
-        run: python -m pip install "dunnit==1.0.0a1"
+        run: python -m pip install "dunnit==1.0.0b1"
 
       - name: Verify the pull request
         env:

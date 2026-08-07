@@ -6,8 +6,7 @@ traditional remote-code-execution vulnerability.
 
 ## Supported versions
 
-Until `1.0.0a1` is published, the latest `0.3.x` release receives security
-fixes. During the v1 prerelease series, only the newest published prerelease is
+During the v1 prerelease series, only the newest published prerelease is
 supported. After stable v1.0, the latest v1.x patch receives fixes; older
 versions may be asked to upgrade before a report is investigated.
 

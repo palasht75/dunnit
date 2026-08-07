@@ -9,7 +9,7 @@ from dunnit.contract import CommandCheck, Contract, Requirements, load_contract,
 from dunnit.runner import verify
 from dunnit.verdict import Evidence, Outcome, Status, Verdict
 
-__version__ = "1.0.0a1"
+__version__ = "1.0.0b1"
 __all__ = [
     "CommandCheck",
     "Contract",

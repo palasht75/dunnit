@@ -8,6 +8,8 @@ scanner-performance evidence. **It contains no benchmark result yet.**
 - [`case.schema.json`](case.schema.json) defines one JSONL manifest record.
 - [`run.py`](run.py) executes fixtures blind and appends raw JSONL results.
 - [`aggregate.py`](aggregate.py) validates and scores manifest + raw results.
+- [`adjudicate.py`](adjudicate.py) verifies independent authorship/adjudication,
+  fixture digests, and freezes a canonical manifest plus SHA-256 audit record.
 - [`make_dev_sample.py`](make_dev_sample.py) generates a three-case harness
   sample that is explicitly **not** the corpus and **not** evidence.
 - [`results/README.md`](results/README.md) reserves the result layout and states
@@ -29,6 +31,7 @@ produced by the same party that writes the detectors.
 | Preregistered protocol | Published before any result |
 | Raw-record schema and aggregator | Implemented, tested |
 | Blind execution runner | Implemented, tested |
+| Independent label finalizer | Implemented, tested; requires human author/reviewer input |
 | Scanner-only instrumentation point | `meta.scanner_duration` in Dunnit |
 | Deterministic fixture format | Implemented (`base/`, `candidate/`, `contract.yaml`, `delete.txt`) |
 | 300-case labeled corpus | **Not started** — needs independent authors and a second adjudicator |
@@ -43,6 +46,42 @@ rerunning under the same protocol ID. A corpus written by whoever just wrote or
 modified the detectors is teaching to the test: it would report high sensitivity
 and mean nothing. Corpus authorship and adjudication are therefore human,
 independent work items, not automation gaps.
+
+## Independent label handoff
+
+Keep label work separate from execution output. An author-label JSONL record is:
+
+```json
+{"author_id":"author-a","authored_at":"2026-08-06T12:00:00Z","case":{"id":"python-skip-001","protocol":"dunnit-benchmark-v1","...":"complete case.schema.json record"}}
+```
+
+The separate reviewer records either agreement:
+
+```json
+{"case_id":"python-skip-001","adjudicator_id":"reviewer-b","adjudicated_at":"2026-08-06T13:00:00Z","decision":"agree"}
+```
+
+or a resolved disagreement with `decision: "resolved"`, a complete
+`final_case`, non-empty `resolution`, and `resolver_id`. IDs may be study
+pseudonyms, but the author and adjudicator IDs for a case must differ. Neither
+file accepts Dunnit result fields.
+
+After every case has been reviewed, freeze the manifest without overwriting an
+existing result:
+
+```bash
+python benchmarks/adjudicate.py \
+  benchmarks/author-labels.jsonl \
+  benchmarks/adjudications.jsonl \
+  --fixtures benchmarks/fixtures \
+  --output benchmarks/manifest.jsonl \
+  --audit-output benchmarks/manifest-audit.json
+```
+
+The finalizer validates every manifest record and recomputes every fixture
+digest. It records counts of distinct author/adjudicator IDs and resolved
+disagreements, but it cannot prove that pseudonyms represent independent
+people; the project maintainer must verify that evidence before publication.
 
 The runner enforces the part that *can* be enforced mechanically: it projects
 every manifest record onto `EXECUTION_KEYS` at parse time, so labels never reach

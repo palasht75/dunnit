@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "benchmarks" / "aggregate.py"
+ADJUDICATE_SCRIPT = ROOT / "benchmarks" / "adjudicate.py"
 SPEC = importlib.util.spec_from_file_location("dunnit_benchmark_aggregate", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 benchmark = importlib.util.module_from_spec(SPEC)
@@ -23,6 +25,74 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
         "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
         encoding="utf-8",
     )
+
+
+def _fixture_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        relative = path.relative_to(root).as_posix()
+        data = path.read_bytes()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(len(data)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(data)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _adjudication_fixture(tmp_path: Path, case_id: str) -> tuple[Path, dict[str, Any]]:
+    fixtures = tmp_path / "fixtures"
+    fixture = fixtures / case_id
+    (fixture / "base" / "tests").mkdir(parents=True)
+    (fixture / "candidate" / "tests").mkdir(parents=True)
+    (fixture / "base" / "tests" / "test_example.py").write_text(
+        "def test_example():\n    assert True\n", encoding="utf-8"
+    )
+    (fixture / "candidate" / "tests" / "test_example.py").write_text(
+        "import pytest\n\n@pytest.mark.skip\ndef test_example():\n    assert True\n",
+        encoding="utf-8",
+    )
+    (fixture / "contract.yaml").write_text(
+        "version: 2\nchecks:\n  - name: tests\n    argv: [python, -m, pytest]\n",
+        encoding="utf-8",
+    )
+    case = _case(case_id)
+    case["fixture_sha256"] = _fixture_digest(fixture)
+    return fixtures, case
+
+
+def _run_adjudicate(
+    tmp_path: Path,
+    fixtures: Path,
+    author_records: list[dict[str, Any]],
+    reviews: list[dict[str, Any]],
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    authors = tmp_path / "authors.jsonl"
+    adjudications = tmp_path / "adjudications.jsonl"
+    manifest = tmp_path / "manifest.jsonl"
+    audit = tmp_path / "audit.json"
+    _write_jsonl(authors, author_records)
+    _write_jsonl(adjudications, reviews)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ADJUDICATE_SCRIPT),
+            str(authors),
+            str(adjudications),
+            "--fixtures",
+            str(fixtures),
+            "--output",
+            str(manifest),
+            "--audit-output",
+            str(audit),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result, manifest, audit
 
 
 def _case(
@@ -415,3 +485,96 @@ def test_case_schema_exposes_all_protocol_topology_variants() -> None:
     schema = json.loads((ROOT / "benchmarks" / "case.schema.json").read_text(encoding="utf-8"))
     values = set(schema["properties"]["topology"]["items"]["enum"])
     assert values == benchmark.TOPOLOGIES
+
+
+def test_adjudication_freezes_canonical_manifest_and_audit(tmp_path: Path) -> None:
+    fixtures, case = _adjudication_fixture(tmp_path, "independent-skip-case")
+    result, manifest, audit = _run_adjudicate(
+        tmp_path,
+        fixtures,
+        [
+            {
+                "author_id": "author-a",
+                "authored_at": "2026-08-06T12:00:00Z",
+                "case": case,
+            }
+        ],
+        [
+            {
+                "case_id": case["id"],
+                "adjudicator_id": "reviewer-b",
+                "adjudicated_at": "2026-08-06T13:00:00Z",
+                "decision": "agree",
+            }
+        ],
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest_bytes = manifest.read_bytes()
+    assert json.loads(manifest_bytes) == case
+    summary = json.loads(audit.read_text(encoding="utf-8"))
+    assert summary == {
+        "case_count": 1,
+        "distinct_adjudicator_count": 1,
+        "distinct_author_count": 1,
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "protocol": benchmark.PROTOCOL,
+        "resolved_disagreement_count": 0,
+    }
+
+
+def test_adjudication_requires_an_independent_reviewer(tmp_path: Path) -> None:
+    fixtures, case = _adjudication_fixture(tmp_path, "same-reviewer-case")
+    result, manifest, audit = _run_adjudicate(
+        tmp_path,
+        fixtures,
+        [
+            {
+                "author_id": "reviewer-a",
+                "authored_at": "2026-08-06T12:00:00Z",
+                "case": case,
+            }
+        ],
+        [
+            {
+                "case_id": case["id"],
+                "adjudicator_id": "reviewer-a",
+                "adjudicated_at": "2026-08-06T13:00:00Z",
+                "decision": "agree",
+            }
+        ],
+    )
+
+    assert result.returncode == 2
+    assert "author and adjudicator must be different" in result.stderr
+    assert not manifest.exists()
+    assert not audit.exists()
+
+
+def test_adjudication_rejects_execution_output_fields(tmp_path: Path) -> None:
+    fixtures, case = _adjudication_fixture(tmp_path, "output-blind-case")
+    result, manifest, audit = _run_adjudicate(
+        tmp_path,
+        fixtures,
+        [
+            {
+                "author_id": "author-a",
+                "authored_at": "2026-08-06T12:00:00Z",
+                "case": case,
+                "dunnit_result": {"outcome": "fail"},
+            }
+        ],
+        [
+            {
+                "case_id": case["id"],
+                "adjudicator_id": "reviewer-b",
+                "adjudicated_at": "2026-08-06T13:00:00Z",
+                "decision": "agree",
+            }
+        ],
+    )
+
+    assert result.returncode == 2
+    assert "unknown keys: dunnit_result" in result.stderr
+    assert not manifest.exists()
+    assert not audit.exists()

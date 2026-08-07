@@ -12,7 +12,7 @@ As of 2026-08-04:
 | Evidence | Status |
 |---|---|
 | Benchmark protocol published before results | Specified in [`benchmarks/PROTOCOL.md`](../benchmarks/PROTOCOL.md) |
-| Benchmark execution harness | Implemented: blind runner, aggregator, and a scanner-only instrumentation point |
+| Benchmark execution harness | Implemented: independent-label finalizer, blind runner, aggregator, and scanner-only instrumentation |
 | Labeled benchmark corpus | Not yet published |
 | Five qualifying independent repositories | Not yet established publicly |
 | Eight-week/100-PR shadow observation | Not complete |
@@ -166,3 +166,12 @@ Publish, whether thresholds pass or fail:
 Raw private repository data is not required for reproducibility. Public seeded
 cases, manifest digests, harness code, aggregate tables, and calculation steps
 must be sufficient to reproduce benchmark metrics.
+
+## Pilot aggregation
+
+[`pilots/aggregate.py`](../pilots/README.md) validates pseudonymous cohort and
+event records against this protocol, deduplicates candidates, enforces phase
+windows and adjudication consistency, and calculates each stable-release and
+marketing-claim gate. Missing evidence produces a failed gate. The tool does
+not recruit repositories, create elapsed time, or substitute generated data
+for maintainer adjudication.
